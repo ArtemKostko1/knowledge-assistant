@@ -1,0 +1,43 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        APP: web
+    ports:
+      - '3000:3000'
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:54321}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-replace-with-local-anon-key}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        APP: api
+    ports:
+      - '3001:3001'
+    environment:
+      PORT: '3001'
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://postgres:postgres@host.docker.internal:54322/postgres}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+  worker:
+    restart: unless-stopped
+    command: ['node', 'apps/worker/dist/main.js']
+    stop_grace_period: 40s
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      args:
+        APP: worker
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://postgres:postgres@host.docker.internal:54322/postgres}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'

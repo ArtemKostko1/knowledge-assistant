@@ -1,0 +1,10 @@
+{
+  "extends": "@knowledge-assistant/config-typescript/base",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "isolatedModules": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["src/**/*.ts"]
+}

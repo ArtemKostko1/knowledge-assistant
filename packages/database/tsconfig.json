@@ -1,0 +1,4 @@
+{
+  "extends": "@knowledge-assistant/config-typescript/base",
+  "include": ["src/**/*.ts", "prisma.config.ts"]
+}
