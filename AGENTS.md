@@ -88,3 +88,47 @@
 - Report changed paths, checks run, checks skipped, risks, and next human gate.
 
 See `docs/ai/agents/` for detailed role contracts and `.cursor/skills/` for repeatable workflows.
+
+
+## AI Execution Budget and Efficiency
+
+### Task scope
+- One Implementer run must handle one narrowly scoped task.
+- Do not autonomously implement an entire feature or milestone.
+- Define allowed paths and acceptance criteria before implementation.
+- Do not expand the scope without human approval.
+- Prefer the cheapest capable model and low reasoning by default.
+- Use higher reasoning only for specific complex problems.
+
+### Agent execution
+- Do not launch additional subagents without explicit approval.
+- Do not repeatedly read unrelated repository files.
+- Reuse verified findings instead of repeating investigations.
+- Limit autonomous fix-and-retest attempts to two per defect.
+- If still blocked, stop and report the problem.
+- Stop immediately after completing the approved acceptance criteria.
+
+### Testing and review
+- Run targeted tests during implementation.
+- Run full regression checks at milestone or PR gates.
+- Do not repeat successful expensive checks unless relevant code changed.
+- Use one independent Reviewer for a completed logical change.
+- Use Security Reviewer for security-sensitive changes.
+- Update documentation at feature or milestone completion.
+
+### Usage control
+- Preserve AI allowance for testing, review, and unexpected issues.
+- Follow tool-enforced token, cost, or iteration budgets when available.
+- If no hard budget is supported, use small tasks and human checkpoints.
+- Report progress and blockers concisely.
+- Never start the next task automatically.
+
+### Completion report
+Report:
+- Completed work and changed paths.
+- Tests passed, failed, or skipped.
+- Remaining risks and blockers.
+- Next recommended small task.
+- Required human approval.
+
+Do not continue implementation after the report.
