@@ -18,13 +18,11 @@ export function authNoStore(
       Number(req.headers['content-length'] ?? 0) > 0 ||
       req.headers['transfer-encoding']
     ) {
-      res
-        .status(400)
-        .json({
-          statusCode: 400,
-          message: 'This endpoint accepts no input',
-          error: 'Bad Request',
-        });
+      res.status(400).json({
+        statusCode: 400,
+        message: 'This endpoint accepts no input',
+        error: 'Bad Request',
+      });
       return;
     }
   }
