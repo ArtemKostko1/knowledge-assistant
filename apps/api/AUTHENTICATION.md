@@ -17,6 +17,37 @@ The API implements ES256 JWT verification and the AppUser bootstrap/profile endp
 - `GET /auth/me` accepts the same Bearer token and no body/query; it only reads
   the existing AppUser (404 if absent), without a bootstrap or fresh Auth call.
   Both endpoints use `Cache-Control: no-store`. No CORS policy is opened.
+- Authentication errors use the shared API error envelope with stable codes,
+  a server-generated `requestId`, and a UTC ISO timestamp. Bootstrap preserves
+  400/401/403/503 statuses and `/auth/me` preserves 400/401/404/503; both
+  document 500 for unexpected failures. The existing safe messages for
+  no-input, missing/invalid Bearer token, unconfirmed email, missing profile,
+  and unavailable Auth/user stores remain allowlisted. Error responses never
+  include provider/database details.
+- Every request receives a server-generated UUID in `X-Request-ID`; any
+  incoming value is ignored. The same ID appears in an error body. Auth
+  success and error responses remain `no-store`. Optional error paths contain
+  only known route templates and never query strings.
+- The API error JSON contract is:
+
+  ```json
+  {
+    "statusCode": 401,
+    "error": {
+      "type": "AuthenticationError",
+      "code": "AUTH_UNAUTHORIZED",
+      "message": "Authentication is required"
+    },
+    "requestId": "d4b519cf-7284-4ae9-a882-3c337a25ef22",
+    "timestamp": "2026-11-17T12:00:00.000Z",
+    "path": "/auth/me"
+  }
+  ```
+
+  `path` and validation-only `error.details` are optional. The web application
+  continues to use HTTP statuses for Auth decisions and reads the profile JSON
+  only on successful responses.
+
 - Database exports compiled ESM. Build/generate are offline and do not apply
   migrations. API dev retains TypeScript decorator metadata and builds its
   database dependency first. Tests build this dependency and substitute all

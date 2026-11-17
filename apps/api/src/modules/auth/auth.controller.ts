@@ -12,6 +12,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
+  ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -19,6 +20,11 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { ApiResponseNoStatusOptions } from '@nestjs/swagger';
+import {
+  ApiErrorResponseDto,
+  apiErrorResponseHeaders,
+} from '../../common/http/api-error.response.js';
 import { AuthGuard } from './auth.guard.js';
 import type { AuthRequest } from './auth.guard.js';
 import { AuthUserService } from './auth-user.service.js';
@@ -26,25 +32,18 @@ import { AppUserRepository } from './app-user.repository.js';
 import { AppUserProfileResponse } from './app-user-profile.response.js';
 
 const noStoreHeaders = {
+  ...apiErrorResponseHeaders,
   'Cache-Control': {
     description: 'Authentication responses are not cacheable.',
     schema: { type: 'string', enum: ['no-store'], example: 'no-store' },
   },
 };
 
-function errorResponse(statusCode: number, error: string, description: string) {
+function errorResponse(description: string): ApiResponseNoStatusOptions {
   return {
     description,
     headers: noStoreHeaders,
-    schema: {
-      type: 'object' as const,
-      required: ['statusCode', 'message', 'error'],
-      properties: {
-        statusCode: { type: 'integer' as const, example: statusCode },
-        message: { type: 'string' as const },
-        error: { type: 'string' as const, enum: [error], example: error },
-      },
-    },
+    type: ApiErrorResponseDto,
   };
 }
 
@@ -84,27 +83,20 @@ export class AuthController {
   })
   @ApiBadRequestResponse(
     errorResponse(
-      400,
-      'Bad Request',
       'The request contains a body or query parameter, or has malformed JSON.',
     ),
   )
   @ApiUnauthorizedResponse(
-    errorResponse(401, 'Unauthorized', 'The Bearer JWT is missing or invalid.'),
+    errorResponse('The Bearer JWT is missing or invalid.'),
   )
   @ApiForbiddenResponse(
-    errorResponse(
-      403,
-      'Forbidden',
-      'The authenticated email is not confirmed.',
-    ),
+    errorResponse('The authenticated email is not confirmed.'),
   )
   @ApiServiceUnavailableResponse(
-    errorResponse(
-      503,
-      'Service Unavailable',
-      'The authentication service or user store is unavailable.',
-    ),
+    errorResponse('The authentication service or user store is unavailable.'),
+  )
+  @ApiInternalServerErrorResponse(
+    errorResponse('An unexpected server error occurred.'),
   )
   async bootstrap(@Req() req: AuthRequest) {
     this.noInput(req);
@@ -124,23 +116,20 @@ export class AuthController {
   })
   @ApiBadRequestResponse(
     errorResponse(
-      400,
-      'Bad Request',
       'The request contains a body or query parameter, or has malformed JSON.',
     ),
   )
   @ApiUnauthorizedResponse(
-    errorResponse(401, 'Unauthorized', 'The Bearer JWT is missing or invalid.'),
+    errorResponse('The Bearer JWT is missing or invalid.'),
   )
   @ApiNotFoundResponse(
-    errorResponse(
-      404,
-      'Not Found',
-      'The application profile has not been bootstrapped.',
-    ),
+    errorResponse('The application profile has not been bootstrapped.'),
   )
   @ApiServiceUnavailableResponse(
-    errorResponse(503, 'Service Unavailable', 'The user store is unavailable.'),
+    errorResponse('The user store is unavailable.'),
+  )
+  @ApiInternalServerErrorResponse(
+    errorResponse('An unexpected server error occurred.'),
   )
   async me(@Req() req: AuthRequest) {
     this.noInput(req);

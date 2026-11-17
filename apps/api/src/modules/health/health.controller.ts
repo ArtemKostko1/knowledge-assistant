@@ -1,5 +1,17 @@
 import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiInternalServerErrorResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiPayloadTooLargeResponse,
+  ApiUnsupportedMediaTypeResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  ApiErrorResponseDto,
+  apiErrorResponseHeaders,
+} from '../../common/http/api-error.response.js';
 
 @ApiTags('health')
 @Controller('health')
@@ -12,6 +24,7 @@ export class HealthController {
   })
   @ApiOkResponse({
     description: 'The API process is healthy.',
+    headers: apiErrorResponseHeaders,
     schema: {
       type: 'object',
       required: ['status'],
@@ -19,6 +32,26 @@ export class HealthController {
         status: { type: 'string', enum: ['ok'], example: 'ok' },
       },
     },
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'An unexpected server error occurred.',
+    headers: apiErrorResponseHeaders,
+    type: ApiErrorResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'The request body could not be parsed.',
+    headers: apiErrorResponseHeaders,
+    type: ApiErrorResponseDto,
+  })
+  @ApiUnsupportedMediaTypeResponse({
+    description: 'The request body charset or encoding is unsupported.',
+    headers: apiErrorResponseHeaders,
+    type: ApiErrorResponseDto,
+  })
+  @ApiPayloadTooLargeResponse({
+    description: 'The request body exceeds the parser limit.',
+    headers: apiErrorResponseHeaders,
+    type: ApiErrorResponseDto,
   })
   status(): { status: string } {
     return { status: 'ok' };
