@@ -1,10 +1,10 @@
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { AppModule } from './app.module.js';
-import { AuthConfig } from './auth/auth.config.js';
-import { AppUserRepository } from './auth/app-user.repository.js';
-import { AuthUserService } from './auth/auth-user.service.js';
-import { JwtVerifier } from './auth/jwt-verifier.js';
+import { AppModule } from '../src/app.module.js';
+import { AuthConfig } from '../src/modules/auth/config/auth.config.js';
+import { AppUserRepository } from '../src/modules/auth/app-user.repository.js';
+import { AuthUserService } from '../src/modules/auth/auth-user.service.js';
+import { JwtVerifier } from '../src/modules/auth/jwt-verifier.js';
 
 describe('health endpoint', () => {
   it('returns readiness of the HTTP skeleton', async () => {

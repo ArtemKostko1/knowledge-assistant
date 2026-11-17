@@ -24,6 +24,20 @@
 - Do not store chat content in the DB or ordinary logs. Do not log tokens or API keys. Commit `.env.example` only, never `.env`.
 - Add focused tests for the changed scope; run applicable format, lint, typecheck, tests and build checks.
 
+## Backend / NestJS Engineering Standards
+
+- Apply SOLID, DRY, KISS, YAGNI, separation of concerns, and low coupling / high cohesion. Prefer the smallest design that solves a current requirement.
+- Organize `apps/api` by feature under `src/modules/<feature>/`. Keep `AppModule` as the composition root; each feature module owns its controllers and providers.
+- Use NestJS dependency injection and explicit module boundaries. Export only providers required by another module. Avoid cyclic imports and do not introduce base classes, generic abstractions, or shared folders without a real consumer.
+- Keep strict TypeScript. Avoid `any`, unsafe assertions, and implicit public contracts; declare return types for exported functions and public service/repository methods.
+- Validate external HTTP input at runtime with explicit DTOs and validation at the transport boundary. Do not add placeholder DTOs to endpoints that intentionally accept no input. Any new validation dependency requires approval.
+- Keep controllers focused on HTTP concerns, services on business orchestration, and repositories on persistence. Keep external SDKs and persistence details behind their owning feature/package boundaries.
+- Add focused tests for new and changed behavior. Keep feature unit tests beside the feature; place application-level, integration, and bootstrap tests under `apps/api/test/`. Prefer deterministic fakes over live external services.
+- Preserve existing HTTP routes, status codes, headers, payloads, and security behavior unless a separately approved change explicitly requires otherwise.
+- After Swagger/OpenAPI is adopted, document every new HTTP endpoint. Keep error responses consistent; any global exception filter is a separately approved cross-cutting change.
+- Use safe structured logging when introduced. Never log credentials, authorization headers, tokens, API keys, request bodies, or chat/document content.
+- Keep `packages/database` responsible for Prisma client/schema/migrations and `packages/contracts` browser-safe. Do not move product CRUD or server-only dependencies into web.
+
 ## Git and Pull Request workflow
 
 ### Branching

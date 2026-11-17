@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { OnModuleDestroy } from '@nestjs/common';
 import { createDatabase } from '@knowledge-assistant/database';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 
 @Injectable()
 export class AppUserRepository implements OnModuleDestroy {
