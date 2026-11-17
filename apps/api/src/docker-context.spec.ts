@@ -13,7 +13,7 @@ describe('Docker context exclusions', () => {
     const globRegex = (pattern: string): RegExp => {
       let source = '^';
       for (let index = 0; index < pattern.length; index += 1) {
-        const character = pattern[index];
+        const character = pattern.charAt(index);
         if (character === '*' && pattern[index + 1] === '*') {
           index += 1;
           if (pattern[index + 1] === '/') {
