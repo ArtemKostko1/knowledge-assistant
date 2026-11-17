@@ -34,8 +34,11 @@
 - Keep controllers focused on HTTP concerns, services on business orchestration, and repositories on persistence. Keep external SDKs and persistence details behind their owning feature/package boundaries.
 - Add focused tests for new and changed behavior. Keep feature unit tests beside the feature; place application-level, integration, and bootstrap tests under `apps/api/test/`. Prefer deterministic fakes over live external services.
 - Preserve existing HTTP routes, status codes, headers, payloads, and security behavior unless a separately approved change explicitly requires otherwise.
-- Every new or modified NestJS HTTP endpoint must include accurate Swagger/OpenAPI documentation, typed request/response contracts, applicable security metadata, documented response status codes, and appropriate tests. Keep error responses consistent; any global exception filter is a separately approved cross-cutting change.
-- Use safe structured logging when introduced. Never log credentials, authorization headers, tokens, API keys, request bodies, or chat/document content.
+- Every new or modified NestJS HTTP endpoint must include accurate Swagger/OpenAPI documentation, typed request/response contracts, applicable security metadata, documented response status codes, and appropriate tests.
+- API HTTP errors use the global `APP_FILTER` and shared typed error contract. Preserve intended HTTP statuses; use stable error codes and safe allowlisted messages. Never serialize arbitrary exception response objects or expose internal errors, causes, stack traces, SQL, credentials, tokens, authorization headers, cookies, request bodies, or chat/document content.
+- The API generates a fresh server UUID request ID per request, ignores incoming `X-Request-ID`, returns `X-Request-ID`, and includes the same ID in error responses and safe diagnostics. Keep query strings and user-controlled URL values out of error paths and logs.
+- Express parser errors must use the shared error formatter and be covered through the actual HTTP pipeline. Preserve middleware/parser ordering and Authentication `Cache-Control: no-store`.
+- Use safe diagnostics when introduced; never log credentials, authorization headers, tokens, API keys, request bodies, or chat/document content. Structured logging remains a separately approved change.
 - Keep `packages/database` responsible for Prisma client/schema/migrations and `packages/contracts` browser-safe. Do not move product CRUD or server-only dependencies into web.
 
 ## Git and Pull Request workflow

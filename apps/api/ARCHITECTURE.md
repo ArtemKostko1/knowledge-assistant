@@ -14,6 +14,17 @@ apps/api/
 ├─ src/
 │  ├─ main.ts
 │  ├─ app.module.ts
+│  ├─ common/
+│  │  └─ http/
+│  │     ├─ api-error.ts
+│  │     ├─ api-error.spec.ts
+│  │     ├─ api-error.response.ts
+│  │     ├─ express-error.middleware.ts
+│  │     ├─ http-exception.filter.ts
+│  │     ├─ parser-application.ts
+│  │     ├─ request-context.ts
+│  │     ├─ request-id.middleware.ts
+│  │     └─ safe-express.adapter.ts
 │  ├─ config/
 │  │  ├─ swagger.config.ts
 │  │  └─ swagger.config.spec.ts
@@ -39,6 +50,7 @@ apps/api/
 │           └─ auth.config.spec.ts
 ├─ test/
 │  ├─ app.spec.ts
+│  ├─ http-errors.spec.ts
 │  ├─ main.spec.ts
 │  ├─ openapi.spec.ts
 │  ├─ dev-environment.spec.ts
@@ -57,11 +69,18 @@ apps/api/
 ## Responsibilities
 
 - `src/main.ts` creates the Nest application, enables shutdown hooks, installs
-  the Authentication HTTP middleware before the body parser, configures
-  Swagger, and listens on the configured port. Preserve this middleware
-  ordering.
+  request-ID and Authentication middleware before the body parser, configures
+  Swagger, mounts the isolated parser application, initializes Nest, and
+  listens. Automatic Nest parser registration is disabled; the isolated
+  application registers the Nest Express parsers once with their default
+  settings and handles their errors immediately after those parsers.
 - `src/app.module.ts` is the composition root and imports `HealthModule` and
-  `AuthModule`; it does not implement endpoints.
+  `AuthModule` and registers the global HTTP exception filter through
+  `APP_FILTER`; it does not implement endpoints.
+- `src/common/http` owns the cross-cutting error contract, safe formatter,
+  request-ID context, Nest exception filter, Express parser-error boundary,
+  and reusable Swagger response schema. Auth-specific authorization and
+  business behavior remain in `modules/auth`.
 - `modules/health` owns `GET /health`, which returns `{ "status": "ok" }`.
   Health is process-level and does not assert database or Supabase readiness.
 - `modules/auth` owns Authentication HTTP behavior, guards, JWT verification,
@@ -97,9 +116,10 @@ main.ts -> AppModule -> HealthModule
   `apps/web`; the API currently does not import the contracts package.
 - `packages/backend` is a placeholder and is not a required dependency
   abstraction for the current Nest modules.
-- Avoid feature-to-feature imports, cyclic module dependencies, and new
-  `common/`, `infrastructure/`, `dto/`, or `utils/` directories until a
-  concrete shared or cross-cutting requirement exists.
+- Avoid feature-to-feature imports and cyclic module dependencies. The
+  `common/http` boundary is justified by shared use in the global filter,
+  bootstrap middleware, Auth early response, and Swagger; do not add unrelated
+  generic abstractions.
 
 ## Adding a feature or endpoint
 
@@ -150,9 +170,10 @@ main.ts -> AppModule -> HealthModule
 - Apply `@ApiBearerAuth('bearer')` only to endpoints protected by the existing
   Bearer JWT guard. This metadata documents the Authorization header; it does
   not implement authentication or frontend SSR session handling.
-- Document the existing Nest exception response forms and endpoint-specific
-  headers. Do not define a shared error DTO or claim a global exception filter
-  unless one is separately implemented and approved.
+- Document the shared `ApiErrorResponseDto` for HTTP errors and the
+  `X-Request-ID` response header. Auth responses also retain
+  `Cache-Control: no-store`. Swagger response schemas must match the global
+  formatter and actual endpoint statuses.
 - OpenAPI contract tests belong in `apps/api/test/`. Verify paths/methods,
   security, schemas, status codes, headers, and environment policy without
   snapshotting the entire generated document. Run the API Jest suite, including
@@ -164,11 +185,54 @@ main.ts -> AppModule -> HealthModule
 
 ## Error handling and logging
 
-Continue using the existing Nest exceptions and safe messages. A global
-ExceptionFilter or structured logger is a future, separately approved change;
-neither is installed by this architecture. When structured logging is
-introduced, never record tokens, keys, authorization headers, request bodies,
-or chat/document content.
+The global Nest exception filter is registered with `APP_FILTER`; parser
+errors are handled within the isolated parser application. Both use the pure
+formatter in `common/http/api-error.ts`. The runtime order is request ID,
+Authentication middleware, Swagger setup, isolated parsers and their error
+boundary, then Nest routes and the Nest error handler.
+The main `SafeExpressAdapter` passes unknown errors through without trusting
+their `status`, `statusCode`, or `expose`; the global filter returns 500.
+Only the isolated parser boundary classifies allowlisted parser error types.
+For zstd, only confirmed prefix and truncated-stream errors are classified as 400. `ZSTD_error_dstSize_tooSmall` is ambiguous: malformed frame data and decoder
+output-buffer problems can produce the same code. It and unknown decoder
+failures remain safe 500 responses. Consequently, some malformed zstd bodies
+can still return 500; this is an accepted fail-safe limitation. No second
+decompression or independent frame validator is performed.
+The pre-parser `authNoStore` middleware keeps its early body/query rejection
+and uses that same formatter so its 400 response does not bypass the contract.
+
+Every request receives a server-generated UUID v4. Incoming `X-Request-ID` is
+ignored and replaced; the generated ID is returned in the response header and
+in error bodies. Error responses contain `statusCode`, normalized
+`error.type`/`error.code`/safe `error.message`, `requestId`, and a UTC ISO
+`timestamp`. A path is included only for a known safe route template; query
+strings and user-controlled dynamic segments are omitted. Validation details
+are optional and limited to safe field/code pairs.
+
+Preserve valid HTTP error statuses. Known statuses map to stable codes;
+unrecognized valid error statuses use `HTTP_ERROR`. Unknown exceptions become
+500 with a fixed public message. Only explicitly allowlisted existing Auth
+messages are retained. Never serialize exception objects, causes, raw parser
+messages, stack traces, SQL, credentials, tokens, cookies, authorization
+headers, request bodies, or chat/document content.
+
+The filter and Express boundary emit one safe Nest `Logger` error record for
+5xx responses with request ID, method, normalized type/code/status, and a safe
+route path. Diagnostic types are limited to `TypeError`, `ReferenceError`,
+`RangeError`, and `UnknownError`. Expected 4xx responses are not error-logged.
+This is not structured logging; a future logging integration requires separate
+approval.
+
+Malformed percent-encoding of a dynamic route parameter currently results in
+a safe 500 rather than the former 400. This is a temporary limitation, not the
+correct final semantics. Before adding the first NestJS dynamic route
+(`@Param`), implement a provenance-safe malformed percent-encoding response
+with HTTP 400 without trusting arbitrary error properties.
+
+Test both formatter behavior and the real HTTP pipeline. Parser tests must use
+Supertest after the production ordering (`request ID` → `authNoStore` →
+Swagger setup → isolated parsers → `app.init()`/Nest routes). Preserve
+Authentication statuses, success payloads, and `Cache-Control: no-store`.
 
 ## TypeScript and verification
 

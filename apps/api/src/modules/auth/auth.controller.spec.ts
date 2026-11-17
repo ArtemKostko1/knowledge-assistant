@@ -1,4 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
@@ -8,6 +11,9 @@ import { JwtVerifier } from './jwt-verifier.js';
 import { AuthUserService } from './auth-user.service.js';
 import { AppUserRepository } from './app-user.repository.js';
 import { authNoStore } from './auth-http.js';
+import { createParserApplication } from '../../common/http/parser-application.js';
+import { requestIdMiddleware } from '../../common/http/request-id.middleware.js';
+import { SafeExpressAdapter } from '../../common/http/safe-express.adapter.js';
 const jestApi = (import.meta as ImportMeta & { jest: typeof jest }).jest;
 
 describe('authentication HTTP boundary (no database/network)', () => {
@@ -67,8 +73,12 @@ describe('authentication HTTP boundary (no database/network)', () => {
       .overrideProvider(AppUserRepository)
       .useValue(users)
       .compile();
-    const app = module.createNestApplication();
+    const app = module.createNestApplication(new SafeExpressAdapter(), {
+      bodyParser: false,
+    });
+    app.use(requestIdMiddleware);
     app.use(authNoStore);
+    app.use(createParserApplication().getInstance());
     await app.init();
     try {
       const bearer = `Bearer ${await token()}`;
@@ -97,7 +107,11 @@ describe('authentication HTTP boundary (no database/network)', () => {
         .get('/auth/me')
         .set('Authorization', bearer)
         .expect(404)
-        .expect('Cache-Control', 'no-store');
+        .expect('Cache-Control', 'no-store')
+        .expect(({ body }) => {
+          expect(body.error.code).toBe('NOT_FOUND');
+          expect(body.path).toBe('/auth/me');
+        });
       for (const body of [
         { id: 'attacker' },
         { email: 'attacker@example.test' },
@@ -128,8 +142,28 @@ describe('authentication HTTP boundary (no database/network)', () => {
       await request(app.getHttpServer())
         .post('/auth/bootstrap')
         .set('Authorization', bearer)
-        .expect(403);
+        .expect(403)
+        .expect('Cache-Control', 'no-store')
+        .expect(({ body }) => {
+          expect(body.error.code).toBe('FORBIDDEN');
+          expect(body.error.message).toBe('Confirmed email required');
+        });
       expect(users.upsert).not.toHaveBeenCalled();
+
+      auth.confirmedEmail.mockRejectedValueOnce(
+        new ServiceUnavailableException('Authentication service unavailable'),
+      );
+      await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .set('Authorization', bearer)
+        .expect(503)
+        .expect('Cache-Control', 'no-store')
+        .expect(({ body, headers }) => {
+          expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
+          expect(headers['x-request-id']).toBe(body.requestId);
+        });
+      expect(users.upsert).not.toHaveBeenCalled();
+
       for (let i = 0; i < 2; i++) {
         await request(app.getHttpServer())
           .post('/auth/bootstrap')
@@ -143,14 +177,14 @@ describe('authentication HTTP boundary (no database/network)', () => {
         id,
         'current@example.test',
       );
-      expect(auth.confirmedEmail).toHaveBeenCalledTimes(3);
+      expect(auth.confirmedEmail).toHaveBeenCalledTimes(4);
       await request(app.getHttpServer())
         .get('/auth/me')
         .set('Authorization', bearer)
         .expect(200)
         .expect(expectedProfile);
       expect(users.upsert).toHaveBeenCalledTimes(2);
-      expect(auth.confirmedEmail).toHaveBeenCalledTimes(3);
+      expect(auth.confirmedEmail).toHaveBeenCalledTimes(4);
       expect(users.find).toHaveBeenLastCalledWith(id);
     } finally {
       await app.close();

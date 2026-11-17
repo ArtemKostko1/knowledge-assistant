@@ -8,6 +8,9 @@ import type {
 } from '@nestjs/swagger';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { createParserApplication } from '../src/common/http/parser-application.js';
+import { requestIdMiddleware } from '../src/common/http/request-id.middleware.js';
+import { SafeExpressAdapter } from '../src/common/http/safe-express.adapter.js';
 import { configureSwagger } from '../src/config/swagger.config.js';
 import { AppUserRepository } from '../src/modules/auth/app-user.repository.js';
 import { authNoStore } from '../src/modules/auth/auth-http.js';
@@ -49,9 +52,13 @@ async function createTestApp(
       find: async () => profile,
     })
     .compile();
-  const app = module.createNestApplication();
+  const app = module.createNestApplication(new SafeExpressAdapter(), {
+    bodyParser: false,
+  });
+  app.use(requestIdMiddleware);
   app.use(authNoStore);
   configureSwagger(app, environment);
+  app.use(createParserApplication().getInstance());
   await app.init();
   return app;
 }
@@ -129,6 +136,9 @@ describe('OpenAPI contract', () => {
           status: { type: 'string', enum: ['ok'], example: 'ok' },
         },
       });
+      expect(
+        responseObject(health, '200')?.headers?.['X-Request-ID'],
+      ).toBeDefined();
 
       const profileSchema = document.components?.schemas
         ?.AppUserProfileResponse as SchemaObject | undefined;
@@ -178,14 +188,72 @@ describe('OpenAPI contract', () => {
           ).toBeDefined();
         }
       };
-      documentedStatuses(bootstrap, ['200', '400', '401', '403', '503']);
-      documentedStatuses(me, ['200', '400', '401', '404', '503']);
+      documentedStatuses(bootstrap, ['200', '400', '401', '403', '500', '503']);
+      documentedStatuses(me, ['200', '400', '401', '404', '500', '503']);
+      for (const endpoint of [bootstrap, me]) {
+        for (const status of Object.keys(endpoint.responses)) {
+          expect(
+            responseObject(endpoint, status)?.headers?.['X-Request-ID'],
+          ).toBeDefined();
+        }
+      }
       expect(responseSchema(bootstrap, '400')).toMatchObject({
-        type: 'object',
-        required: ['statusCode', 'message', 'error'],
-        properties: {
-          statusCode: { type: 'integer', example: 400 },
-          error: { type: 'string', enum: ['Bad Request'] },
+        $ref: '#/components/schemas/ApiErrorResponseDto',
+      });
+      expect(responseSchema(me, '500')).toEqual({
+        $ref: '#/components/schemas/ApiErrorResponseDto',
+      });
+      expect(responseSchema(health, '500')).toEqual({
+        $ref: '#/components/schemas/ApiErrorResponseDto',
+      });
+      expect(responseSchema(health, '413')).toEqual({
+        $ref: '#/components/schemas/ApiErrorResponseDto',
+      });
+      for (const status of ['400', '415']) {
+        expect(responseSchema(health, status)).toEqual({
+          $ref: '#/components/schemas/ApiErrorResponseDto',
+        });
+        expect(
+          responseObject(health, status)?.headers?.['X-Request-ID'],
+        ).toBeDefined();
+      }
+      expect(
+        responseObject(health, '413')?.headers?.['X-Request-ID'],
+      ).toBeDefined();
+      const errorSchema = document.components?.schemas?.ApiErrorResponseDto as
+        SchemaObject | undefined;
+      expect(errorSchema?.required).toEqual([
+        'statusCode',
+        'error',
+        'requestId',
+        'timestamp',
+      ]);
+      expect(errorSchema?.properties?.statusCode).toMatchObject({
+        type: 'integer',
+        minimum: 400,
+        maximum: 599,
+      });
+      expect(errorSchema?.properties?.error).toEqual({
+        $ref: '#/components/schemas/ApiErrorBodyResponse',
+      });
+      expect(errorSchema?.properties?.requestId).toMatchObject({
+        type: 'string',
+        format: 'uuid',
+      });
+      expect(errorSchema?.properties?.timestamp).toMatchObject({
+        type: 'string',
+        format: 'date-time',
+      });
+      expect(errorSchema?.properties?.path).toMatchObject({
+        type: 'string',
+      });
+      const errorBodySchema = document.components?.schemas
+        ?.ApiErrorBodyResponse as SchemaObject | undefined;
+      expect(errorBodySchema?.required).toEqual(['type', 'code', 'message']);
+      expect(errorBodySchema?.properties?.details).toEqual({
+        type: 'array',
+        items: {
+          $ref: '#/components/schemas/ApiValidationErrorDetailResponse',
         },
       });
 
@@ -204,6 +272,9 @@ describe('OpenAPI contract', () => {
         .expect(200)
         .expect('Cache-Control', 'no-store');
       expect(bootstrapResponse.body).toEqual(expectedProfile);
+      expect(bootstrapResponse.headers['x-request-id']).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
 
       const meResponse = await request(app.getHttpServer())
         .get('/auth/me')
