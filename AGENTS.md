@@ -34,7 +34,7 @@
 - Keep controllers focused on HTTP concerns, services on business orchestration, and repositories on persistence. Keep external SDKs and persistence details behind their owning feature/package boundaries.
 - Add focused tests for new and changed behavior. Keep feature unit tests beside the feature; place application-level, integration, and bootstrap tests under `apps/api/test/`. Prefer deterministic fakes over live external services.
 - Preserve existing HTTP routes, status codes, headers, payloads, and security behavior unless a separately approved change explicitly requires otherwise.
-- After Swagger/OpenAPI is adopted, document every new HTTP endpoint. Keep error responses consistent; any global exception filter is a separately approved cross-cutting change.
+- Every new or modified NestJS HTTP endpoint must include accurate Swagger/OpenAPI documentation, typed request/response contracts, applicable security metadata, documented response status codes, and appropriate tests. Keep error responses consistent; any global exception filter is a separately approved cross-cutting change.
 - Use safe structured logging when introduced. Never log credentials, authorization headers, tokens, API keys, request bodies, or chat/document content.
 - Keep `packages/database` responsible for Prisma client/schema/migrations and `packages/contracts` browser-safe. Do not move product CRUD or server-only dependencies into web.
 

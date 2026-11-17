@@ -14,6 +14,9 @@ apps/api/
 ├─ src/
 │  ├─ main.ts
 │  ├─ app.module.ts
+│  ├─ config/
+│  │  ├─ swagger.config.ts
+│  │  └─ swagger.config.spec.ts
 │  └─ modules/
 │     ├─ health/
 │     │  ├─ health.controller.ts
@@ -21,6 +24,7 @@ apps/api/
 │     └─ auth/
 │        ├─ app-user.repository.ts
 │        ├─ app-user.repository.spec.ts
+│        ├─ app-user-profile.response.ts
 │        ├─ auth-http.ts
 │        ├─ auth.controller.ts
 │        ├─ auth.controller.spec.ts
@@ -36,6 +40,7 @@ apps/api/
 ├─ test/
 │  ├─ app.spec.ts
 │  ├─ main.spec.ts
+│  ├─ openapi.spec.ts
 │  ├─ dev-environment.spec.ts
 │  ├─ dev-metadata.spec.ts
 │  └─ docker-context.spec.ts
@@ -52,8 +57,9 @@ apps/api/
 ## Responsibilities
 
 - `src/main.ts` creates the Nest application, enables shutdown hooks, installs
-  the Authentication HTTP middleware before the body parser, and listens on
-  the configured port. Preserve this middleware ordering.
+  the Authentication HTTP middleware before the body parser, configures
+  Swagger, and listens on the configured port. Preserve this middleware
+  ordering.
 - `src/app.module.ts` is the composition root and imports `HealthModule` and
   `AuthModule`; it does not implement endpoints.
 - `modules/health` owns `GET /health`, which returns `{ "status": "ok" }`.
@@ -104,15 +110,57 @@ main.ts -> AppModule -> HealthModule
    external SDK use at the owning feature boundary.
 3. Register the feature module in `AppModule`; export only providers consumed
    by another module. Do not add abstraction layers solely for uniformity.
-4. Define an explicit DTO and runtime validation for external input. Endpoints
-   that accept no input must continue to reject body/query input; they do not
-   need placeholder DTOs.
-5. Add focused deterministic tests beside the feature. Put application-level
+4. Define an explicit typed DTO and runtime validation for external input.
+   Endpoints that accept no input must continue to reject body/query input;
+   they do not need placeholder DTOs.
+5. Add accurate Swagger/OpenAPI decorators for every endpoint: tags,
+   operation descriptions, success and known error status codes, explicit
+   response schemas, and applicable security metadata. Do not document
+   parameters or request bodies that the endpoint does not accept.
+6. Add focused deterministic tests beside the feature. Put application-level
    and integration tests in `apps/api/test/`; no normal unit test should need
    live Supabase, a database, Docker, or AI credentials.
-6. Preserve existing API contracts by default. Add Swagger/OpenAPI
-   documentation to every new HTTP endpoint after Swagger is adopted; adding
-   the Swagger dependency/setup is outside this architecture change.
+7. Preserve existing API routes, status codes, headers, payloads, and security
+   behavior by default. A Swagger schema describes the existing HTTP response;
+   it must not introduce a mapper, interceptor, or behavior change solely for
+   documentation.
+
+## Swagger / OpenAPI
+
+- Cross-cutting setup and environment policy live in
+  `src/config/swagger.config.ts`; do not create a Swagger-only Nest module.
+- In non-production, Swagger is enabled by default and can be disabled with
+  `SWAGGER_ENABLED=false`. In production it is always disabled, even when
+  `SWAGGER_ENABLED=true`. Disabled Swagger does not register routes.
+- Start the API locally with `pnpm --filter @knowledge-assistant/api dev`
+  after configuring the required local environment described in
+  [AUTHENTICATION.md](./AUTHENTICATION.md). With a non-production API running,
+  open `http://localhost:3001/docs` for Swagger UI and retrieve the OpenAPI
+  JSON from `http://localhost:3001/docs-json` (for example,
+  `curl http://localhost:3001/docs-json`). No global API prefix is used or
+  changed.
+- Use `@ApiTags` and `@ApiOperation` for each controller/operation. Describe
+  the actual successful and known error status codes with the corresponding
+  response decorators. Keep response schemas aligned with runtime JSON; use
+  explicit `@ApiProperty` metadata on response classes where TypeScript types
+  are erased at runtime. Do not expose Prisma models in the OpenAPI contract.
+- Define typed request DTOs only for real request input. Do not add placeholder
+  DTOs to inputless operations. Document no-input behavior without inventing
+  body or query parameters.
+- Apply `@ApiBearerAuth('bearer')` only to endpoints protected by the existing
+  Bearer JWT guard. This metadata documents the Authorization header; it does
+  not implement authentication or frontend SSR session handling.
+- Document the existing Nest exception response forms and endpoint-specific
+  headers. Do not define a shared error DTO or claim a global exception filter
+  unless one is separately implemented and approved.
+- OpenAPI contract tests belong in `apps/api/test/`. Verify paths/methods,
+  security, schemas, status codes, headers, and environment policy without
+  snapshotting the entire generated document. Run the API Jest suite, including
+  the OpenAPI contract tests, with:
+
+  ```sh
+  pnpm --filter @knowledge-assistant/api test
+  ```
 
 ## Error handling and logging
 

@@ -8,11 +8,48 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { AuthGuard } from './auth.guard.js';
 import type { AuthRequest } from './auth.guard.js';
 import { AuthUserService } from './auth-user.service.js';
 import { AppUserRepository } from './app-user.repository.js';
+import { AppUserProfileResponse } from './app-user-profile.response.js';
 
+const noStoreHeaders = {
+  'Cache-Control': {
+    description: 'Authentication responses are not cacheable.',
+    schema: { type: 'string', enum: ['no-store'], example: 'no-store' },
+  },
+};
+
+function errorResponse(statusCode: number, error: string, description: string) {
+  return {
+    description,
+    headers: noStoreHeaders,
+    schema: {
+      type: 'object' as const,
+      required: ['statusCode', 'message', 'error'],
+      properties: {
+        statusCode: { type: 'integer' as const, example: statusCode },
+        message: { type: 'string' as const },
+        error: { type: 'string' as const, enum: [error], example: error },
+      },
+    },
+  };
+}
+
+@ApiTags('auth')
+@ApiBearerAuth('bearer')
 @Controller('auth')
 @UseGuards(AuthGuard)
 export class AuthController {
@@ -35,12 +72,76 @@ export class AuthController {
   }
   @Post('bootstrap')
   @HttpCode(200)
+  @ApiOperation({
+    summary: 'Bootstrap the authenticated application user',
+    description:
+      'Confirms the current Supabase user and creates or updates the application profile. This endpoint accepts no request body or query parameters.',
+  })
+  @ApiOkResponse({
+    description: 'The application user profile.',
+    type: AppUserProfileResponse,
+    headers: noStoreHeaders,
+  })
+  @ApiBadRequestResponse(
+    errorResponse(
+      400,
+      'Bad Request',
+      'The request contains a body or query parameter, or has malformed JSON.',
+    ),
+  )
+  @ApiUnauthorizedResponse(
+    errorResponse(401, 'Unauthorized', 'The Bearer JWT is missing or invalid.'),
+  )
+  @ApiForbiddenResponse(
+    errorResponse(
+      403,
+      'Forbidden',
+      'The authenticated email is not confirmed.',
+    ),
+  )
+  @ApiServiceUnavailableResponse(
+    errorResponse(
+      503,
+      'Service Unavailable',
+      'The authentication service or user store is unavailable.',
+    ),
+  )
   async bootstrap(@Req() req: AuthRequest) {
     this.noInput(req);
     const email = await this.auth.confirmedEmail(req.identity);
     return this.users.upsert(req.identity.id, email);
   }
   @Get('me')
+  @ApiOperation({
+    summary: 'Get the authenticated application user profile',
+    description:
+      'Returns the existing application profile without creating it. This endpoint accepts no request body or query parameters.',
+  })
+  @ApiOkResponse({
+    description: 'The application user profile.',
+    type: AppUserProfileResponse,
+    headers: noStoreHeaders,
+  })
+  @ApiBadRequestResponse(
+    errorResponse(
+      400,
+      'Bad Request',
+      'The request contains a body or query parameter, or has malformed JSON.',
+    ),
+  )
+  @ApiUnauthorizedResponse(
+    errorResponse(401, 'Unauthorized', 'The Bearer JWT is missing or invalid.'),
+  )
+  @ApiNotFoundResponse(
+    errorResponse(
+      404,
+      'Not Found',
+      'The application profile has not been bootstrapped.',
+    ),
+  )
+  @ApiServiceUnavailableResponse(
+    errorResponse(503, 'Service Unavailable', 'The user store is unavailable.'),
+  )
   async me(@Req() req: AuthRequest) {
     this.noInput(req);
     const user = await this.users.find(req.identity.id);
