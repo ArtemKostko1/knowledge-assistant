@@ -1,43 +1,98 @@
+name: knowledge-assistant
+
 services:
-  web:
+  # ==========================================================
+  # CLIENT - Next.js
+  # ==========================================================
+
+  client:
+    image: knowledge-assistant-client
+    container_name: knowledge-assistant-client
+
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
+      target: client-runtime
       args:
-        APP: web
-    ports:
-      - '3000:3000'
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
-      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:54321}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-replace-with-local-anon-key}
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-  api:
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile
-      args:
-        APP: api
-    ports:
-      - '3001:3001'
-    environment:
-      PORT: '3001'
-      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://postgres:postgres@host.docker.internal:54322/postgres}
-      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-  worker:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Required}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?Required}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Required}
+
     restart: unless-stopped
-    command: ['node', 'apps/worker/dist/main.js']
-    stop_grace_period: 40s
+
+    ports:
+      - '127.0.0.1:${CLIENT_PORT:-3000}:3000'
+
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      HOSTNAME: 0.0.0.0
+
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Required}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?Required}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Required}
+
+      SUPABASE_INTERNAL_URL: ${COMPOSE_SUPABASE_URL:?Required}
+      API_INTERNAL_URL: http://api:3001
+
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  # ==========================================================
+  # API - NestJS
+  # ==========================================================
+
+  api:
+    image: knowledge-assistant-api
+    container_name: knowledge-assistant-api
+
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
-      args:
-        APP: worker
+      target: api-runtime
+
+    restart: unless-stopped
+    stop_grace_period: 40s
+
+    ports:
+      - '127.0.0.1:${API_PORT:-3001}:3001'
+
     environment:
-      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://postgres:postgres@host.docker.internal:54322/postgres}
-      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      NODE_ENV: production
+
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?Required}
+
+      SUPABASE_URL: ${COMPOSE_SUPABASE_URL:?Required}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?Required}
+
+      SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER:?Required}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
+      SUPABASE_JWT_ALGORITHM: ${SUPABASE_JWT_ALGORITHM:-ES256}
+
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  # ==========================================================
+  # WORKER - Node.js
+  # ==========================================================
+
+  worker:
+    image: knowledge-assistant-worker
+    container_name: knowledge-assistant-worker
+
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      target: worker-runtime
+
+    restart: unless-stopped
+    stop_grace_period: 40s
+
+    environment:
+      NODE_ENV: production
+
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?Required}
+      SUPABASE_URL: ${COMPOSE_SUPABASE_URL:?Required}
+
     extra_hosts:
       - 'host.docker.internal:host-gateway'

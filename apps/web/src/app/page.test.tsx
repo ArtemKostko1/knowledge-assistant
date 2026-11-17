@@ -1,24 +1,31 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { MantineProvider } from '@mantine/core';
+import { beforeEach, expect, it, vi } from 'vitest';
 import Home from './page';
 
-beforeAll(() => {
-  vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: false,
-    media: query,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), redirect: vi.fn() }));
+vi.mock('../features/auth/server/session', () => ({
+  getVerifiedSession: mocks.session,
+}));
+vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.redirect.mockImplementation(() => {
+    throw new Error('redirect');
+  });
 });
 
-describe('Home', () => {
-  it('shows the bootstrap screen', () => {
-    render(
-      <MantineProvider>
-        <Home />
-      </MantineProvider>,
-    );
-    expect(screen.getByText('Knowledge Assistant')).toBeTruthy();
+it.each([
+  ['unauthenticated', '/login'],
+  ['authenticated', '/app'],
+])('redirects the root with verified session status %s', async (kind, path) => {
+  mocks.session.mockResolvedValue({ kind });
+  await expect(Home()).rejects.toThrow('redirect');
+  expect(mocks.redirect).toHaveBeenCalledWith(path);
+});
+it('does not redirect to private content if authentication is unavailable', async () => {
+  mocks.session.mockResolvedValue({
+    kind: 'error',
+    message: 'Authentication is unavailable.',
   });
+  expect(await Home()).toBeTruthy();
+  expect(mocks.redirect).not.toHaveBeenCalled();
 });

@@ -1,12 +1,19 @@
-import { Container, Title, Text } from '@mantine/core';
+import { redirect } from 'next/navigation';
+import { Alert, Container } from '@mantine/core';
+import { getVerifiedSession } from '../features/auth/server/session';
+import { routes } from '../config/routes';
 
-export default function Home() {
-  return (
-    <Container py="xl">
-      <Title>Knowledge Assistant</Title>
-      <Text>
-        Local development bootstrap is ready. Product features come later.
-      </Text>
-    </Container>
-  );
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  const session = await getVerifiedSession();
+  if (session.kind === 'error')
+    return (
+      <Container py="xl">
+        <Alert role="alert" color="red">
+          {session.message}
+        </Alert>
+      </Container>
+    );
+  redirect(session.kind === 'authenticated' ? routes.app : routes.login);
 }

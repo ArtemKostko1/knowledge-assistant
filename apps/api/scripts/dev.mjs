@@ -1,4 +1,16 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+
+// The database workspace exports compiled ESM, including the offline-generated client.
+const database = spawnSync(
+  process.execPath,
+  [
+    '../../node_modules/turbo/bin/turbo',
+    'build',
+    '--filter=@knowledge-assistant/database',
+  ],
+  { stdio: 'inherit' },
+);
+if (database.status !== 0) process.exit(database.status ?? 1);
 
 // Compile with TypeScript (not tsx/esbuild) so Nest's emitted design metadata
 // matches the production build. Restart only after a successful compilation.

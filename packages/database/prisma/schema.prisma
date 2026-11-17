@@ -7,4 +7,9 @@ datasource db {
   provider = "postgresql"
 }
 
-// Product models and their first migration are deliberately deferred.
+model AppUser {
+  id        String   @id @db.Uuid
+  email     String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}

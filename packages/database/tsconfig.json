@@ -1,4 +1,5 @@
 {
   "extends": "@knowledge-assistant/config-typescript/base",
+  "compilerOptions": { "module": "NodeNext", "moduleResolution": "NodeNext" },
   "include": ["src/**/*.ts", "prisma.config.ts"]
 }
