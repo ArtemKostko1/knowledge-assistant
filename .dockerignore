@@ -10,6 +10,8 @@
 **/.env.*
 *.pem
 *.key
+**/*.pem
+**/*.key
 
 # Dependencies
 node_modules

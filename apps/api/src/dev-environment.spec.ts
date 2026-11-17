@@ -9,12 +9,16 @@ describe('host development environment wiring', () => {
     };
     expect(turbo.tasks.dev.passThroughEnv).toEqual([
       'DATABASE_URL',
+      'API_INTERNAL_URL',
       'PORT',
       'SUPABASE_URL',
       'SUPABASE_ANON_KEY',
       'SUPABASE_JWT_ISSUER',
       'SUPABASE_JWT_AUDIENCE',
       'SUPABASE_JWT_ALGORITHM',
+      'NEXT_PUBLIC_API_URL',
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     ]);
   });
 
