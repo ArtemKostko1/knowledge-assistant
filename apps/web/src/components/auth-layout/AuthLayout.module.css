@@ -1,0 +1,14 @@
+.root {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 32px);
+}
+
+.content {
+  width: 100%;
+  max-width: 28rem;
+  min-width: 0;
+}

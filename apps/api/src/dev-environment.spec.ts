@@ -7,7 +7,15 @@ describe('host development environment wiring', () => {
     ) as {
       tasks: { dev: { passThroughEnv: string[] } };
     };
-    expect(turbo.tasks.dev.passThroughEnv).toEqual(['DATABASE_URL', 'PORT']);
+    expect(turbo.tasks.dev.passThroughEnv).toEqual([
+      'DATABASE_URL',
+      'PORT',
+      'SUPABASE_URL',
+      'SUPABASE_ANON_KEY',
+      'SUPABASE_JWT_ISSUER',
+      'SUPABASE_JWT_AUDIENCE',
+      'SUPABASE_JWT_ALGORITHM',
+    ]);
   });
 
   it('loads the root env file for API and worker, without requiring a database', () => {

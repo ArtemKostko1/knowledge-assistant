@@ -4,11 +4,32 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["DATABASE_URL", "PORT"]
+      "dependsOn": ["^build"],
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "API_INTERNAL_URL",
+        "PORT",
+        "SUPABASE_URL",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_JWT_ISSUER",
+        "SUPABASE_JWT_AUDIENCE",
+        "SUPABASE_JWT_ALGORITHM",
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+      ]
     },
-    "build": { "dependsOn": ["^build"], "outputs": [".next/**", "dist/**"] },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "dist/**"],
+      "env": [
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+      ]
+    },
     "lint": { "dependsOn": ["^lint"] },
-    "typecheck": { "dependsOn": ["^typecheck"] },
+    "typecheck": { "dependsOn": ["^typecheck", "^build"] },
     "test": { "dependsOn": ["^test"], "cache": false }
   }
 }

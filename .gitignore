@@ -1,13 +1,101 @@
+
+# ============================================================
+# Dependencies
+# ============================================================
+
 node_modules/
-.next/
-dist/
-coverage/
-.turbo/
-playwright-report/
-test-results/
+.pnpm-store/
+.pnp.*
+
+# ============================================================
+# Environment variables and secrets
+# ============================================================
+
 .env
 .env.*
 !.env.example
-supabase/.branches/
-supabase/.temp/
+!.env.*.example
+
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+*.pem
+*.key
+
+# ============================================================
+# Build outputs
+# ============================================================
+
+dist/
+build/
+out/
+.next/
+/packages/database/generated/client/
+.turbo/
 *.tsbuildinfo
+
+# ============================================================
+# Testing
+# ============================================================
+
+coverage/
+playwright-report/
+test-results/
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# ============================================================
+# Graphify
+# ============================================================
+
+graphify-out/
+
+# ============================================================
+# Supabase local runtime
+# ============================================================
+
+supabase/.branches/
+supabase/.profiles/
+
+# ============================================================
+# Editors and OS
+# ============================================================
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Local files
+# ============================================================
+
+*.local
+*.tmp
+*.temp
+
+# ============================================================
+# Local OpenCode configuration
+# ============================================================
+
+# Local MCP connections and user-specific configuration
+/opencode.jsonc
+
+# Local Graphify skill
+/.opencode/skills/graphify-local/
+
+# ============================================================
+# Supabase local SQL snippets
+# ============================================================
+
+# SQL snippets created in local Supabase Studio
+/supabase/snippets/

@@ -1,3 +1,3 @@
 import shared from '@knowledge-assistant/config-eslint';
 
-export default shared;
+export default [...shared, { ignores: ['generated/**', 'dist/**'] }];

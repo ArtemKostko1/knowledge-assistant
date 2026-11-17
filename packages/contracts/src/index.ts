@@ -1,2 +1,7 @@
-// Browser-safe API contracts will be added alongside product features.
-export {};
+// Browser-safe profile returned by the backend Auth API.
+export interface AppUserProfile {
+  id: string;
+  email: string;
+  createdAt: string;
+  updatedAt: string;
+}

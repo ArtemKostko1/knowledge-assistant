@@ -1,20 +1,51 @@
+
+# Git
+.git
+.gitignore
+
+# Credentials
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+
+# Dependencies
 node_modules
 **/node_modules
-.git
-**/.git
+.pnpm-store
+
+# Generated builds
 .next
 **/.next
 dist
 **/dist
-coverage
-**/coverage
+build
+**/build
+out
+**/out
 .turbo
 **/.turbo
-.env
-**/.env
-.env.*
-**/.env.*
-!.env.example
-!**/.env.example
-supabase/.branches
-supabase/.temp
+
+# Testing artifacts
+coverage
+**/coverage
+playwright-report
+test-results
+
+# Graphify
+graphify-out
+
+# Local workspace metadata
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docker overrides not needed inside image
+compose.override.yaml
+docker-compose.override.yml
+
+# Logs
+*.log
