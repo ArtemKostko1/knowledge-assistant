@@ -1,6 +1,6 @@
 import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from 'jose';
 import type { JWTPayload } from 'jose';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 import { JwtVerifier } from './jwt-verifier.js';
 
 export const testConfig = new AuthConfig(

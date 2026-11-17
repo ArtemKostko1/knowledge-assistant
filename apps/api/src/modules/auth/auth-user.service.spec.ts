@@ -1,5 +1,5 @@
 import { AuthUserService } from './auth-user.service.js';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 const jestApi = (import.meta as ImportMeta & { jest: typeof jest }).jest;
 
 describe('fresh Supabase Auth verification', () => {

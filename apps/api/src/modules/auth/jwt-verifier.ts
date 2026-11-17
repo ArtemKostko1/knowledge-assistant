@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { JWTVerifyGetKey } from 'jose';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 
 export interface CheckedIdentity {
   id: string;

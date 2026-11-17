@@ -18,10 +18,10 @@ it('enables shutdown hooks before listening', async () => {
       }),
     },
   }));
-  jestApi.unstable_mockModule('./app.module.js', () => ({
+  jestApi.unstable_mockModule('../src/app.module.js', () => ({
     AppModule: class {},
   }));
-  await import('./main.js');
+  await import('../src/main.js');
   expect(enableShutdownHooks).toHaveBeenCalledTimes(1);
   expect(listen).toHaveBeenCalledTimes(1);
   expect(enableShutdownHooks.mock.invocationCallOrder[0]).toBeLessThan(

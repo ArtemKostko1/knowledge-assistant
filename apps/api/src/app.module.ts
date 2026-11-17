@@ -1,13 +1,6 @@
-import { Controller, Get, Module } from '@nestjs/common';
-import { AuthModule } from './auth/auth.module.js';
+import { Module } from '@nestjs/common';
+import { AuthModule } from './modules/auth/auth.module.js';
+import { HealthModule } from './modules/health/health.module.js';
 
-@Controller('health')
-class HealthController {
-  @Get()
-  status(): { status: string } {
-    return { status: 'ok' };
-  }
-}
-
-@Module({ imports: [AuthModule], controllers: [HealthController] })
+@Module({ imports: [AuthModule, HealthModule] })
 export class AppModule {}

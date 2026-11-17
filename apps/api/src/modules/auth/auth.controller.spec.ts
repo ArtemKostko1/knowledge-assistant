@@ -2,8 +2,8 @@ import { ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { AppModule } from '../app.module.js';
-import { AuthConfig } from './auth.config.js';
+import { AppModule } from '../../app.module.js';
+import { AuthConfig } from './config/auth.config.js';
 import { JwtVerifier } from './jwt-verifier.js';
 import { AuthUserService } from './auth-user.service.js';
 import { AppUserRepository } from './app-user.repository.js';
@@ -33,10 +33,23 @@ describe('authentication HTTP boundary (no database/network)', () => {
         .setIssuedAt()
         .setExpirationTime(expired ? 1 : '5m')
         .sign(pair.privateKey);
-    let row: { id: string; email: string } | null = null;
+    const createdAt = new Date('2026-01-02T03:04:05.000Z');
+    const updatedAt = new Date('2026-01-03T04:05:06.000Z');
+    const expectedProfile = {
+      id,
+      email: 'current@example.test',
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+    };
+    let row: {
+      id: string;
+      email: string;
+      createdAt: Date;
+      updatedAt: Date;
+    } | null = null;
     const users = {
       upsert: jestApi.fn(async (userId: string, email: string) => {
-        row = { id: userId, email };
+        row = { id: userId, email, createdAt, updatedAt };
         return row;
       }),
       find: jestApi.fn(async () => row),
@@ -123,7 +136,7 @@ describe('authentication HTTP boundary (no database/network)', () => {
           .set('Authorization', bearer)
           .expect(200)
           .expect('Cache-Control', 'no-store')
-          .expect({ id, email: 'current@example.test' });
+          .expect(expectedProfile);
       }
       expect(users.upsert).toHaveBeenNthCalledWith(
         1,
@@ -135,7 +148,7 @@ describe('authentication HTTP boundary (no database/network)', () => {
         .get('/auth/me')
         .set('Authorization', bearer)
         .expect(200)
-        .expect({ id, email: 'current@example.test' });
+        .expect(expectedProfile);
       expect(users.upsert).toHaveBeenCalledTimes(2);
       expect(auth.confirmedEmail).toHaveBeenCalledTimes(3);
       expect(users.find).toHaveBeenLastCalledWith(id);

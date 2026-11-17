@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { Test } from '@nestjs/testing';
 import { AppUserRepository } from './app-user.repository.js';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 const jestApi = (import.meta as ImportMeta & { jest: typeof jest }).jest;
 
 describe('database runtime foundation (no connection or writes)', () => {
@@ -46,7 +46,7 @@ describe('database runtime foundation (no connection or writes)', () => {
           '-e',
           "import { createDatabase } from '@knowledge-assistant/database'; const db = createDatabase('postgresql://unused:unused@127.0.0.1:1/unused'); await db.$disconnect();",
         ],
-        { cwd: new URL('../../', import.meta.url) },
+        { cwd: new URL('../../../', import.meta.url) },
       ),
     ).not.toThrow();
   });

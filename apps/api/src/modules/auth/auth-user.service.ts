@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
-import { AuthConfig } from './auth.config.js';
+import { AuthConfig } from './config/auth.config.js';
 import type { CheckedIdentity } from './jwt-verifier.js';
 
 @Injectable()
