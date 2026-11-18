@@ -64,3 +64,20 @@ Tests actually present:
 - The API uses Supabase Auth for fresh user verification and trusted JWKS routing; its health response remains process-only. Worker readiness requires a PostgreSQL connection but its unit test checks only configuration.
 - The CLI TOML includes `enabled = true` entries for services excluded by the root startup script; use the actual invocation when diagnosing local components.
 - The root check workflow does not exercise Playwright e2e or migrations. No database service status, migration state or CI outcome was verified as part of writing these docs.
+
+# API logging
+
+`LOG_LEVEL=info` is the default; `debug` is the only other accepted value.
+Invalid values fail API startup without echoing the supplied value.
+`NODE_ENV=production` selects JSON Lines; development selects readable text.
+There is no LOG_FORMAT option. Explicit levels ignore NEST_LOG_LEVEL overrides.
+Production sends normal events to stdout and error/fatal to stderr; no files,
+external transports or monitoring services are configured.
+
+HTTP completion uses the existing server request ID and a monotonic duration.
+Successful GET /health 200 is omitted; errors and aborted requests remain visible.
+An aborted request has no confirmed response status. A 5xx diagnostic and its
+completion are distinct events sharing requestId. Never log raw request/response
+or Error objects, URL/query, headers, body, credentials, email, SQL, cause or stack.
+Nest system messages are replaced by fixed safe categories. Shutdown hooks are
+preserved, but log delivery on abrupt termination or broken output is not guaranteed.

@@ -1,5 +1,7 @@
 import { requestIdMiddleware } from '../src/common/http/request-id.middleware.js';
 import { authNoStore } from '../src/modules/auth/auth-http.js';
+import { httpCompletion } from '../src/common/logging/http-completion.js';
+import { safeLogger } from '../src/common/logging/safe-logger.js';
 
 const jestApi = (
   import.meta as ImportMeta & {
@@ -52,12 +54,13 @@ it('installs request middleware, Swagger and the parser application before init'
   expect(create).toHaveBeenCalledWith(
     AppModule,
     expect.any(SafeExpressAdapter),
-    { bodyParser: false },
+    { bodyParser: false, logger: safeLogger },
   );
-  expect(use).toHaveBeenCalledTimes(3);
+  expect(use).toHaveBeenCalledTimes(4);
   expect(use).toHaveBeenNthCalledWith(1, requestIdMiddleware);
-  expect(use).toHaveBeenNthCalledWith(2, authNoStore);
-  expect(use).toHaveBeenNthCalledWith(3, parserInstance);
+  expect(use).toHaveBeenNthCalledWith(2, httpCompletion);
+  expect(use).toHaveBeenNthCalledWith(3, authNoStore);
+  expect(use).toHaveBeenNthCalledWith(4, parserInstance);
   expect(createParserApplication).toHaveBeenCalledTimes(1);
   expect(configureSwagger).toHaveBeenCalledWith(application);
   expect(init).toHaveBeenCalledTimes(1);
@@ -71,13 +74,13 @@ it('installs request middleware, Swagger and the parser application before init'
   expect(configureSwagger.mock.invocationCallOrder[0]!).toBeLessThan(
     init.mock.invocationCallOrder[0]!,
   );
-  expect(use.mock.invocationCallOrder[1]!).toBeLessThan(
+  expect(use.mock.invocationCallOrder[2]!).toBeLessThan(
     configureSwagger.mock.invocationCallOrder[0]!,
   );
   expect(configureSwagger.mock.invocationCallOrder[0]!).toBeLessThan(
-    use.mock.invocationCallOrder[2]!,
+    use.mock.invocationCallOrder[3]!,
   );
-  expect(use.mock.invocationCallOrder[2]!).toBeLessThan(
+  expect(use.mock.invocationCallOrder[3]!).toBeLessThan(
     init.mock.invocationCallOrder[0]!,
   );
   expect(configureSwagger.mock.invocationCallOrder[0]!).toBeLessThan(

@@ -5,7 +5,6 @@ import {
   Get,
   HttpException,
   InternalServerErrorException,
-  Logger,
   NotFoundException,
   Param,
   Post,
@@ -27,6 +26,7 @@ import {
 } from 'node:zlib';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { safeLogger } from '../src/common/logging/safe-logger.js';
 import { expressErrorMiddleware } from '../src/common/http/express-error.middleware.js';
 import { createParserApplication } from '../src/common/http/parser-application.js';
 import { requestIdMiddleware } from '../src/common/http/request-id.middleware.js';
@@ -265,7 +265,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
     async (kind, status, code) => {
       const app = await createHttpTestApp();
       const loggerSpy = jestApi
-        .spyOn(Logger.prototype, 'error')
+        .spyOn(safeLogger, 'application')
         .mockImplementation(() => undefined);
       try {
         const response = await request(app.getHttpServer())
@@ -291,7 +291,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
 
   it('maps invalid and unknown exceptions to a safe 500 and logs one correlated record', async () => {
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp();
     try {
@@ -311,10 +311,10 @@ describe('global HTTP error handling and Express parser boundary', () => {
 
       expect(loggerSpy).toHaveBeenCalledTimes(3);
       for (const [message] of loggerSpy.mock.calls) {
-        expect(message).toContain('requestId=');
-        expect(message).not.toContain('secret-marker');
-        expect(message).not.toContain('private');
-        expect(message).not.toContain('authorization');
+        expect(message.requestId).toBeDefined();
+        expect(JSON.stringify(message)).not.toContain('secret-marker');
+        expect(JSON.stringify(message)).not.toContain('private');
+        expect(JSON.stringify(message)).not.toContain('authorization');
       }
     } finally {
       loggerSpy.mockRestore();
@@ -324,7 +324,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
 
   it('logs only a fixed diagnostic type without exception content', async () => {
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp();
     try {
@@ -332,12 +332,10 @@ describe('global HTTP error handling and Express parser boundary', () => {
         .get('/_test/errors/type-error?token=secret-query')
         .expect(500);
       expect(loggerSpy).toHaveBeenCalledTimes(1);
-      expect(loggerSpy.mock.calls[0]?.[0]).toContain(
-        'diagnosticType=TypeError',
-      );
-      expect(loggerSpy.mock.calls[0]?.[0]).toContain(
-        `requestId=${response.body.requestId}`,
-      );
+      expect(loggerSpy.mock.calls[0]?.[0]).toMatchObject({
+        diagnosticType: 'TypeError',
+        requestId: response.body.requestId,
+      });
       expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain('secret-');
       expect(JSON.stringify(response.body)).not.toContain('secret-');
     } finally {
@@ -424,7 +422,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
     async (encoding, compress) => {
       const parserSpy = jestApi.fn(expressErrorMiddleware);
       const loggerSpy = jestApi
-        .spyOn(Logger.prototype, 'error')
+        .spyOn(safeLogger, 'application')
         .mockImplementation(() => undefined);
       const received: Array<{
         body: Buffer;
@@ -500,7 +498,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
   it('keeps ambiguous zstd output-buffer failures at 500', async () => {
     const parserSpy = jestApi.fn(expressErrorMiddleware);
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp(parserSpy);
     try {
@@ -536,7 +534,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
 
   it('does not attempt a second response after headers have been sent', async () => {
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp();
     try {
@@ -548,7 +546,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
       expect(response.text).toBe('already-sent');
       expect(response.headers['content-type']).not.toMatch(/application\/json/);
       expect(loggerSpy).toHaveBeenCalledTimes(1);
-      expect(loggerSpy.mock.calls[0]?.[0]).toContain('requestId=');
+      expect(loggerSpy.mock.calls[0]?.[0]?.requestId).toBeDefined();
     } finally {
       loggerSpy.mockRestore();
       await app.close();
@@ -653,7 +651,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
   it('does not trust spoofed middleware errors before or after the isolated parser', async () => {
     const parserSpy = jestApi.fn(expressErrorMiddleware);
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp(parserSpy);
     try {
@@ -694,7 +692,7 @@ describe('global HTTP error handling and Express parser boundary', () => {
   it('preserves the approved URI decoding limitation', async () => {
     const parserSpy = jestApi.fn(expressErrorMiddleware);
     const loggerSpy = jestApi
-      .spyOn(Logger.prototype, 'error')
+      .spyOn(safeLogger, 'application')
       .mockImplementation(() => undefined);
     const app = await createHttpTestApp(parserSpy);
     try {

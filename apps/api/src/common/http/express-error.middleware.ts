@@ -1,9 +1,8 @@
-import { Logger } from '@nestjs/common';
+import { safeLogger } from '../logging/safe-logger.js';
 import {
   classifyDiagnosticError,
   classifyBodyParserError,
   classifyHttpStatus,
-  formatHttpErrorLog,
   formatHttpErrorResponse,
   resolveSafeErrorPath,
 } from './api-error.js';
@@ -14,8 +13,6 @@ import type {
   ExpressNext,
 } from './request-context.js';
 import { ensureRequestId } from './request-id.middleware.js';
-
-const logger = new Logger('ExpressErrorBoundary');
 
 export function expressErrorMiddleware(
   exception: unknown,
@@ -39,14 +36,20 @@ export function expressErrorMiddleware(
     classifyHttpStatus(500);
 
   if (classification.statusCode >= 500) {
-    logger.error(
-      formatHttpErrorLog(classification, {
+    try {
+      safeLogger.application({
+        event: 'http.request.failed',
+        boundary: 'parser',
+        statusCode: classification.statusCode,
+        errorCode: classification.code,
         requestId,
         method: request.method,
-        path,
+        route: path,
         diagnosticType: classifyDiagnosticError(exception),
-      }),
-    );
+      });
+    } catch {
+      // Preserve the parser error response even if logging fails.
+    }
   }
 
   response

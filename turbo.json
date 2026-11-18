@@ -9,6 +9,7 @@
         "DATABASE_URL",
         "API_INTERNAL_URL",
         "PORT",
+        "LOG_LEVEL",
         "SUPABASE_URL",
         "SUPABASE_ANON_KEY",
         "SUPABASE_JWT_ISSUER",
