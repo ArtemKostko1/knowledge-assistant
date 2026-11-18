@@ -38,7 +38,9 @@
 - API HTTP errors use the global `APP_FILTER` and shared typed error contract. Preserve intended HTTP statuses; use stable error codes and safe allowlisted messages. Never serialize arbitrary exception response objects or expose internal errors, causes, stack traces, SQL, credentials, tokens, authorization headers, cookies, request bodies, or chat/document content.
 - The API generates a fresh server UUID request ID per request, ignores incoming `X-Request-ID`, returns `X-Request-ID`, and includes the same ID in error responses and safe diagnostics. Keep query strings and user-controlled URL values out of error paths and logs.
 - Express parser errors must use the shared error formatter and be covered through the actual HTTP pipeline. Preserve middleware/parser ordering and Authentication `Cache-Control: no-store`.
-- Use safe diagnostics when introduced; never log credentials, authorization headers, tokens, API keys, request bodies, or chat/document content. Structured logging remains a separately approved change.
+- API logging uses the shared SafeLogger and typed allowlisted events. Never pass raw requests, responses, Error objects, arbitrary messages, credentials, cookies, tokens, body/query data, SQL, email, or chat/document content to application logs. Nest system calls are normalized by the safe adapter.
+- Keep request completion logging before Authentication/parser middleware. Emit at most one completion per request; successful GET /health 200 is excluded. Exception boundaries own one 5xx diagnostic; completion is a separate event. Preserve request ID correlation and test real HTTP lifecycle events.
+- Production logging is JSON Lines on stdout/stderr; LOG_LEVEL accepts only info/debug and cannot disable error/fatal. Do not introduce transports, ALS, tracing or external monitoring without separate approval.
 - Keep `packages/database` responsible for Prisma client/schema/migrations and `packages/contracts` browser-safe. Do not move product CRUD or server-only dependencies into web.
 
 ## Git and Pull Request workflow

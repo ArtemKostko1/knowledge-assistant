@@ -15,6 +15,10 @@ apps/api/
 │  ├─ main.ts
 │  ├─ app.module.ts
 │  ├─ common/
+│  │  ├─ logging/
+│  │  │  ├─ safe-logger.ts
+│  │  │  ├─ safe-logger.spec.ts
+│  │  │  └─ http-completion.ts
 │  │  └─ http/
 │  │     ├─ api-error.ts
 │  │     ├─ api-error.spec.ts
@@ -69,7 +73,7 @@ apps/api/
 ## Responsibilities
 
 - `src/main.ts` creates the Nest application, enables shutdown hooks, installs
-  request-ID and Authentication middleware before the body parser, configures
+  request-ID, completion and Authentication middleware before the body parser, configures
   Swagger, mounts the isolated parser application, initializes Nest, and
   listens. Automatic Nest parser registration is disabled; the isolated
   application registers the Nest Express parsers once with their default
@@ -188,8 +192,8 @@ main.ts -> AppModule -> HealthModule
 The global Nest exception filter is registered with `APP_FILTER`; parser
 errors are handled within the isolated parser application. Both use the pure
 formatter in `common/http/api-error.ts`. The runtime order is request ID,
-Authentication middleware, Swagger setup, isolated parsers and their error
-boundary, then Nest routes and the Nest error handler.
+HTTP completion, Authentication middleware, Swagger setup, isolated parsers and
+their error boundary, then Nest routes and the Nest error handler.
 The main `SafeExpressAdapter` passes unknown errors through without trusting
 their `status`, `statusCode`, or `expose`; the global filter returns 500.
 Only the isolated parser boundary classifies allowlisted parser error types.
@@ -216,12 +220,43 @@ messages are retained. Never serialize exception objects, causes, raw parser
 messages, stack traces, SQL, credentials, tokens, cookies, authorization
 headers, request bodies, or chat/document content.
 
-The filter and Express boundary emit one safe Nest `Logger` error record for
-5xx responses with request ID, method, normalized type/code/status, and a safe
-route path. Diagnostic types are limited to `TypeError`, `ReferenceError`,
-`RangeError`, and `UnknownError`. Expected 4xx responses are not error-logged.
-This is not structured logging; a future logging integration requires separate
-approval.
+The shared `SafeLogger` uses Nest `ConsoleLogger` with explicit levels.
+Production writes JSON Lines without ANSI; development writes readable text.
+Normal events go to stdout, error/fatal to stderr. `LOG_LEVEL` accepts only
+`info` (default) and `debug`; explicit levels prevent `NEST_LOG_LEVEL` from
+overriding this policy. Invalid settings fail startup without printing the value.
+
+Bootstrap passes the same safe adapter directly to `NestFactory.create`.
+DI and the parser boundary share that policy instance. Nest messages and optional
+parameters are never forwarded verbatim: unknown system calls become
+`nest.system` with fixed codes. Known Auth configuration failures use
+`CONFIGURATION_FAILED` / `AuthConfig`; bootstrap rejection uses
+`api.startup.failed` with a fixed code. Original messages/stacks are intentionally
+unavailable in these logs.
+
+The runtime order is request ID, HTTP completion instrumentation, Auth middleware,
+Swagger, isolated parsers, then Nest routes/error handler. A monotonic clock starts
+before Auth and parsing. Response `finish` records `http.request.completed` with
+`outcome=finished`, status and duration; `close` before finish records `aborted`
+without a confirmed status. A once-guard prevents duplicate completion events.
+Finish means server-side write completion, not proof of client receipt.
+Only successful GET /health with status 200 is excluded.
+
+Filter and parser boundaries own `http.request.failed` at error level for 5xx.
+Completion is a separate event, correlated by the existing request ID.
+Expected 4xx create completion only. Diagnostic types are restricted to TypeError,
+ReferenceError, RangeError and UnknownError. Logs contain only projected fields:
+event, requestId, method, safe route, status/duration/outcome or safe diagnostic
+code/category/boundary. No raw request/response/error, URL/query, body, credentials,
+email, stack, cause or SQL is serialized. Redaction is not a substitute for this
+allowlist. Application code must use typed events, not arbitrary Nest messages.
+
+Tests use memory sinks and separately verify real ConsoleLogger JSON/text output.
+Synchronous sink failures are contained without changing responses. Stdout pipe
+failure, process termination and backpressure can still lose logs or affect the
+process; delivery is not guaranteed. There is no file/network transport, retry,
+queue, ALS or tracing. Existing shutdown hooks remain; no custom transport needs
+flushing. Runtime/third-party direct console output is outside the adapter.
 
 Malformed percent-encoding of a dynamic route parameter currently results in
 a safe 500 rather than the former 400. This is a temporary limitation, not the
@@ -230,8 +265,9 @@ correct final semantics. Before adding the first NestJS dynamic route
 with HTTP 400 without trusting arbitrary error properties.
 
 Test both formatter behavior and the real HTTP pipeline. Parser tests must use
-Supertest after the production ordering (`request ID` → `authNoStore` →
-Swagger setup → isolated parsers → `app.init()`/Nest routes). Preserve
+Supertest after the production ordering (`request ID` → `httpCompletion` →
+`authNoStore` → Swagger setup → isolated parsers → `app.init()`/Nest routes
+and error handler). Preserve
 Authentication statuses, success payloads, and `Cache-Control: no-store`.
 
 ## TypeScript and verification

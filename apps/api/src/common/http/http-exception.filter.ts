@@ -1,10 +1,10 @@
-import { Catch, Injectable, Logger } from '@nestjs/common';
+import { Catch, Injectable } from '@nestjs/common';
+import { SafeLogger } from '../logging/safe-logger.js';
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import {
   classifyDiagnosticError,
   classifyHttpException,
-  formatHttpErrorLog,
   formatHttpErrorResponse,
   resolveSafeErrorPath,
 } from './api-error.js';
@@ -18,9 +18,10 @@ import type { ApiErrorContext } from './api-error.js';
 @Catch()
 @Injectable()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
-
-  constructor(private readonly adapterHost: HttpAdapterHost) {}
+  constructor(
+    private readonly adapterHost: HttpAdapterHost,
+    private readonly logger: SafeLogger,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
@@ -33,14 +34,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const classification = classifyHttpException(exception);
 
     if (classification.statusCode >= 500) {
-      this.logger.error(
-        formatHttpErrorLog(classification, {
+      try {
+        this.logger.application({
+          event: 'http.request.failed',
+          boundary: 'nest',
+          statusCode: classification.statusCode,
+          errorCode: classification.code,
           requestId,
           method: request.method,
-          path,
+          route: path,
           diagnosticType: classifyDiagnosticError(exception),
-        }),
-      );
+        });
+      } catch {
+        // Preserve the HTTP error response even if logging fails.
+      }
     }
 
     if (adapter.isHeadersSent(response)) {
