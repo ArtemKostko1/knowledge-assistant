@@ -14,9 +14,84 @@ import { authNoStore } from './auth-http.js';
 import { createParserApplication } from '../../common/http/parser-application.js';
 import { requestIdMiddleware } from '../../common/http/request-id.middleware.js';
 import { SafeExpressAdapter } from '../../common/http/safe-express.adapter.js';
+import { safeLogger } from '../../common/logging/safe-logger.js';
 const jestApi = (import.meta as ImportMeta & { jest: typeof jest }).jest;
 
 describe('authentication HTTP boundary (no database/network)', () => {
+  it('returns a safe correlated 503 for malformed Auth data', async () => {
+    const id = 'a1234567-1234-4123-8123-123456789abc';
+    const config = new AuthConfig(
+      'http://auth.example.test',
+      'sb_publishable_test',
+      'http://issuer.example.test/auth/v1',
+      'authenticated',
+      'ES256',
+      'unused',
+    );
+    const fetch = jestApi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id,
+          email: { marker: 'secret-upstream' },
+          email_confirmed_at: 'confirmed',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const logs = jestApi.spyOn(safeLogger, 'application');
+    const upsert = jestApi.fn();
+    try {
+      const module = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(AuthConfig)
+        .useValue(config)
+        .overrideProvider(JwtVerifier)
+        .useValue({ verify: async (token: string) => ({ id, token }) })
+        .overrideProvider(AppUserRepository)
+        .useValue({ upsert })
+        .compile();
+      const app = module.createNestApplication(new SafeExpressAdapter(), {
+        bodyParser: false,
+      });
+      app.use(requestIdMiddleware);
+      app.use(authNoStore);
+      app.use(createParserApplication().getInstance());
+      await app.init();
+      try {
+        const response = await request(app.getHttpServer())
+          .post('/auth/bootstrap')
+          .set('Authorization', 'Bearer secret-token')
+          .expect(503)
+          .expect('Cache-Control', 'no-store');
+        expect(response.body).toMatchObject({
+          statusCode: 503,
+          error: {
+            type: 'ServiceUnavailableError',
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Authentication service unavailable',
+          },
+          requestId: response.headers['x-request-id'],
+          path: '/auth/bootstrap',
+        });
+        expect(response.body.requestId).toMatch(/^[0-9a-f-]{36}$/i);
+        expect(response.body.timestamp).toEqual(expect.any(String));
+        expect(upsert).not.toHaveBeenCalled();
+        expect(logs).toHaveBeenCalledTimes(1);
+        expect(logs.mock.calls[0]?.[0]).toMatchObject({
+          requestId: response.body.requestId,
+          statusCode: 503,
+        });
+        expect(
+          JSON.stringify({ body: response.body, logs: logs.mock.calls }),
+        ).not.toMatch(/secret-|user@example/);
+      } finally {
+        await app.close();
+      }
+    } finally {
+      logs.mockRestore();
+      fetch.mockRestore();
+    }
+  });
+
   it('guards input, bootstraps from fresh Auth data, and keeps me read-only', async () => {
     const id = 'a1234567-1234-4123-8123-123456789abc';
     const config = new AuthConfig(

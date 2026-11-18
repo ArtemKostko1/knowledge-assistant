@@ -46,11 +46,31 @@ export class AuthUserService {
       );
     if (result.error || !result.data.user)
       throw new UnauthorizedException('Invalid access token');
-    const user = result.data.user;
+    const user: unknown = result.data.user;
+    if (
+      typeof user !== 'object' ||
+      user === null ||
+      !('id' in user) ||
+      typeof user.id !== 'string' ||
+      user.id.length === 0
+    )
+      throw new ServiceUnavailableException(
+        'Authentication service unavailable',
+      );
     if (user.id.toLowerCase() !== identity.id)
       throw new UnauthorizedException('Invalid access token');
-    if (!user.email_confirmed_at || !user.email)
+    const email = 'email' in user ? user.email : undefined;
+    const confirmedAt =
+      'email_confirmed_at' in user ? user.email_confirmed_at : undefined;
+    if (
+      (email != null && typeof email !== 'string') ||
+      (confirmedAt != null && typeof confirmedAt !== 'string')
+    )
+      throw new ServiceUnavailableException(
+        'Authentication service unavailable',
+      );
+    if (!confirmedAt || !email)
       throw new ForbiddenException('Confirmed email required');
-    return user.email;
+    return email;
   }
 }
