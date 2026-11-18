@@ -86,6 +86,11 @@ class TestHttpErrorsController {
         throw new InternalServerErrorException('secret-marker explicit 500');
       case 'type-error':
         throw new TypeError('secret-type-error');
+      case 'revoked-proxy': {
+        const revoked = Proxy.revocable({ marker: 'secret-proxy' }, {});
+        revoked.revoke();
+        throw revoked.proxy;
+      }
       default:
         throw new NotFoundException();
     }
@@ -250,6 +255,110 @@ function expectErrorContract(
 }
 
 describe('global HTTP error handling and Express parser boundary', () => {
+  it('returns one safe response and diagnostic for a revoked exception, even if logging fails', async () => {
+    const loggerSpy = jestApi
+      .spyOn(safeLogger, 'application')
+      .mockImplementation(() => undefined);
+    const app = await createHttpTestApp();
+    const reply = jestApi.spyOn(app.getHttpAdapter(), 'reply');
+    try {
+      const first = await request(app.getHttpServer())
+        .get('/_test/errors/revoked-proxy?token=secret-query')
+        .expect(500);
+      expectErrorContract(
+        first.body as Record<string, unknown>,
+        500,
+        'INTERNAL_SERVER_ERROR',
+      );
+      expect(first.body.requestId).toBe(first.headers['x-request-id']);
+      expect(reply).toHaveBeenCalledTimes(1);
+      expect(loggerSpy).toHaveBeenCalledTimes(1);
+      expect(loggerSpy.mock.calls[0]?.[0]).toMatchObject({
+        event: 'http.request.failed',
+        boundary: 'nest',
+        diagnosticType: 'UnknownError',
+        requestId: first.body.requestId,
+      });
+      expect(
+        JSON.stringify({ body: first.body, logs: loggerSpy.mock.calls }),
+      ).not.toContain('secret-');
+
+      loggerSpy.mockImplementationOnce(() => {
+        throw new Error('secret-logging');
+      });
+      const second = await request(app.getHttpServer())
+        .get('/_test/errors/revoked-proxy')
+        .expect(500);
+      expectErrorContract(
+        second.body as Record<string, unknown>,
+        500,
+        'INTERNAL_SERVER_ERROR',
+      );
+      expect(second.body.requestId).toBe(second.headers['x-request-id']);
+      expect(reply).toHaveBeenCalledTimes(2);
+      expect(loggerSpy).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(second.body)).not.toContain('secret-');
+    } finally {
+      reply.mockRestore();
+      loggerSpy.mockRestore();
+      await app.close();
+    }
+  });
+
+  it('uses a single safe parser response and diagnostic when an error getter throws', async () => {
+    const loggerSpy = jestApi
+      .spyOn(safeLogger, 'application')
+      .mockImplementation(() => undefined);
+    let writes = 0;
+    const handler: typeof expressErrorMiddleware = (
+      _exception,
+      req,
+      res,
+      next,
+    ) => {
+      const error = new Error('secret-parser');
+      Object.defineProperty(error, 'type', {
+        get() {
+          throw new Error('secret-getter');
+        },
+      });
+      const original = res.json.bind(res);
+      jestApi.spyOn(res, 'json').mockImplementation((body) => {
+        writes += 1;
+        original(body);
+      });
+      expressErrorMiddleware(error, req, res, next);
+    };
+    const app = await createHttpTestApp(handler);
+    try {
+      const response = await request(app.getHttpServer())
+        .get('/health?token=secret-query')
+        .set('Content-Type', 'application/json')
+        .send('{"secret":')
+        .expect(500);
+      expectErrorContract(
+        response.body as Record<string, unknown>,
+        500,
+        'INTERNAL_SERVER_ERROR',
+      );
+      expect(response.body.requestId).toBe(response.headers['x-request-id']);
+      expect(writes).toBe(1);
+      expect(loggerSpy).toHaveBeenCalledTimes(1);
+      expect(loggerSpy.mock.calls[0]?.[0]).toMatchObject({
+        event: 'http.request.failed',
+        boundary: 'parser',
+        diagnosticType: 'UnknownError',
+        requestId: response.body.requestId,
+      });
+      expect(
+        JSON.stringify({ body: response.body, logs: loggerSpy.mock.calls }),
+      ).not.toContain('secret');
+    } finally {
+      loggerSpy.mockRestore();
+      await app.close();
+    }
+  });
+
   it.each([
     ['400', 400, 'BAD_REQUEST'],
     ['401', 401, 'AUTH_UNAUTHORIZED'],
