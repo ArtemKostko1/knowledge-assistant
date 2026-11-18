@@ -15,11 +15,15 @@ export interface AuthRequest {
   query: Record<string, unknown>;
 }
 
+type PreAuthenticationRequest = Omit<AuthRequest, 'identity'> & {
+  identity?: CheckedIdentity;
+};
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly verifier: JwtVerifier) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<AuthRequest>();
+    const req = context.switchToHttp().getRequest<PreAuthenticationRequest>();
     // Also cover 401/403/404 responses, before controller handlers run.
     context
       .switchToHttp()
