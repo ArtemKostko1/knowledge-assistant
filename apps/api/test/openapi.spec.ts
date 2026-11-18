@@ -26,6 +26,7 @@ const profile = {
   email: 'user@example.test',
   createdAt,
   updatedAt,
+  internalOnly: 'internal-persistence-value',
 };
 const expectedProfile = {
   id: profileId,
@@ -272,6 +273,9 @@ describe('OpenAPI contract', () => {
         .expect(200)
         .expect('Cache-Control', 'no-store');
       expect(bootstrapResponse.body).toEqual(expectedProfile);
+      expect(Object.keys(bootstrapResponse.body).sort()).toEqual(
+        Object.keys(profileSchema?.properties ?? {}).sort(),
+      );
       expect(bootstrapResponse.headers['x-request-id']).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );
