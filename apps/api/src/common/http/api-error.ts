@@ -87,9 +87,13 @@ export type DiagnosticErrorType =
   'TypeError' | 'ReferenceError' | 'RangeError' | 'UnknownError';
 
 export function classifyDiagnosticError(error: unknown): DiagnosticErrorType {
-  if (error instanceof TypeError) return 'TypeError';
-  if (error instanceof ReferenceError) return 'ReferenceError';
-  if (error instanceof RangeError) return 'RangeError';
+  try {
+    if (error instanceof TypeError) return 'TypeError';
+    if (error instanceof ReferenceError) return 'ReferenceError';
+    if (error instanceof RangeError) return 'RangeError';
+  } catch {
+    return 'UnknownError';
+  }
   return 'UnknownError';
 }
 
@@ -249,11 +253,10 @@ export function classifyHttpStatus(
 export function classifyHttpException(
   exception: unknown,
 ): HttpErrorClassification {
-  if (!(exception instanceof HttpException)) {
-    return classifyHttpStatus(500);
-  }
-
   try {
+    if (!(exception instanceof HttpException)) {
+      return classifyHttpStatus(500);
+    }
     const statusCode = exception.getStatus();
     const classification = classifyHttpStatus(statusCode);
     const safeMessage = safeHttpExceptionMessage(
@@ -273,40 +276,46 @@ export function classifyBodyParserError(
   exception: unknown,
   contentEncoding?: string,
 ): HttpErrorClassification | undefined {
-  if (!(exception instanceof Error) || !isRecord(exception)) return undefined;
-  if (
-    contentEncoding?.toLowerCase() === 'zstd' &&
-    exception.type === undefined &&
-    ((exception.code === 'ZSTD_error_prefix_unknown' &&
-      exception.errno === zlibConstants.ZSTD_error_prefix_unknown) ||
-      (exception.code === 'Z_BUF_ERROR' &&
-        exception.errno === zlibConstants.Z_BUF_ERROR))
-  ) {
-    return classifyHttpStatus(400);
-  }
-  if (
-    (contentEncoding?.toLowerCase() === 'gzip' ||
-      contentEncoding?.toLowerCase() === 'deflate') &&
-    (exception.code === 'Z_DATA_ERROR' || exception.code === 'Z_BUF_ERROR') &&
-    exception.type === undefined
-  ) {
-    return classifyHttpStatus(400);
-  }
-  if (
-    contentEncoding?.toLowerCase() === 'br' &&
-    exception.type === undefined &&
-    (exception.code === 'Z_BUF_ERROR' ||
-      (typeof exception.code === 'string' &&
-        typeof exception.errno === 'number' &&
-        BROTLI_FORMAT_ERRORS.get(exception.code) === exception.errno))
-  ) {
-    return classifyHttpStatus(400);
-  }
-  const type = exception.type;
-  if (typeof type !== 'string') return undefined;
+  try {
+    if (!(exception instanceof Error) || !isRecord(exception)) return undefined;
+    if (
+      contentEncoding?.toLowerCase() === 'zstd' &&
+      exception.type === undefined &&
+      ((exception.code === 'ZSTD_error_prefix_unknown' &&
+        exception.errno === zlibConstants.ZSTD_error_prefix_unknown) ||
+        (exception.code === 'Z_BUF_ERROR' &&
+          exception.errno === zlibConstants.Z_BUF_ERROR))
+    ) {
+      return classifyHttpStatus(400);
+    }
+    if (
+      (contentEncoding?.toLowerCase() === 'gzip' ||
+        contentEncoding?.toLowerCase() === 'deflate') &&
+      (exception.code === 'Z_DATA_ERROR' || exception.code === 'Z_BUF_ERROR') &&
+      exception.type === undefined
+    ) {
+      return classifyHttpStatus(400);
+    }
+    if (
+      contentEncoding?.toLowerCase() === 'br' &&
+      exception.type === undefined &&
+      (exception.code === 'Z_BUF_ERROR' ||
+        (typeof exception.code === 'string' &&
+          typeof exception.errno === 'number' &&
+          BROTLI_FORMAT_ERRORS.get(exception.code) === exception.errno))
+    ) {
+      return classifyHttpStatus(400);
+    }
+    const type = exception.type;
+    if (typeof type !== 'string') return undefined;
 
-  const statusCode = BODY_PARSER_ERROR_STATUSES[type];
-  return statusCode === undefined ? undefined : classifyHttpStatus(statusCode);
+    const statusCode = BODY_PARSER_ERROR_STATUSES[type];
+    return statusCode === undefined
+      ? undefined
+      : classifyHttpStatus(statusCode);
+  } catch {
+    return undefined;
+  }
 }
 
 export function resolveSafeErrorPath(

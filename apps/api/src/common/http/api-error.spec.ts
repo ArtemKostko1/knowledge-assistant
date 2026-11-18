@@ -29,6 +29,68 @@ describe('HTTP error contract formatter', () => {
     expect(classifyDiagnosticError(error)).toBe(expected);
   });
 
+  it('falls back safely for hostile exception prototypes and HttpException accessors', () => {
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error('secret-prototype');
+        },
+      },
+    );
+    const exception = new BadRequestException('secret-message');
+    Object.defineProperty(exception, 'getStatus', {
+      get() {
+        throw new Error('secret-accessor');
+      },
+    });
+    for (const value of [
+      revoked.proxy,
+      hostile,
+      exception,
+      { status: 400, statusCode: 401 },
+    ]) {
+      expect(classifyHttpException(value)).toEqual(classifyHttpStatus(500));
+    }
+    expect(classifyDiagnosticError(revoked.proxy)).toBe('UnknownError');
+    expect(classifyDiagnosticError(hostile)).toBe('UnknownError');
+    expect(classifyDiagnosticError(new TypeError('secret'))).toBe('TypeError');
+    expect(classifyHttpException(new BadRequestException())).toMatchObject({
+      statusCode: 400,
+      code: 'BAD_REQUEST',
+    });
+  });
+
+  it('leaves parser errors unclassified when runtime inspection throws', () => {
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    expect(classifyBodyParserError(revoked.proxy)).toBeUndefined();
+    for (const [field, encoding] of [
+      ['type', 'identity'],
+      ['code', 'gzip'],
+      ['errno', 'zstd'],
+    ] as const) {
+      const error = Object.assign(new Error('secret-parser'), {
+        code: 'ZSTD_error_prefix_unknown',
+      });
+      Object.defineProperty(error, field, {
+        get() {
+          throw new Error('secret-accessor');
+        },
+      });
+      expect(classifyBodyParserError(error, encoding)).toBeUndefined();
+    }
+    expect(
+      classifyBodyParserError({
+        type: 'entity.parse.failed',
+        status: 400,
+        statusCode: 400,
+      }),
+    ).toBeUndefined();
+  });
+
   it('normalizes a known safe HttpException message and timestamp', () => {
     const response = formatHttpErrorResponse(
       classifyHttpException(
