@@ -33,7 +33,18 @@ it('records real lifecycle completions and one safe server diagnostic with the s
   const parserSpy = jestApi
     .spyOn(safeLogger, 'application')
     .mockImplementation((event) => logger.application(event));
-  const profile = { id: 'test-user', email: 'synthetic@example.test' };
+  const profile = {
+    id: 'test-user',
+    email: 'synthetic@example.test',
+    createdAt: new Date('2026-01-02T03:04:05.000Z'),
+    updatedAt: new Date('2026-01-03T04:05:06.000Z'),
+  };
+  const expectedProfile = {
+    id: profile.id,
+    email: profile.email,
+    createdAt: profile.createdAt.toISOString(),
+    updatedAt: profile.updatedAt.toISOString(),
+  };
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(SafeLogger)
     .useValue(logger)
@@ -76,7 +87,7 @@ it('records real lifecycle completions and one safe server diagnostic with the s
       .set('Authorization', 'Bearer synthetic')
       .expect(200)
       .expect('Cache-Control', 'no-store');
-    expect(success.body).toEqual(profile);
+    expect(success.body).toEqual(expectedProfile);
     const early = await request(app.getHttpServer())
       .post('/auth/bootstrap')
       .send({ secret: 'secret-body' })
@@ -114,7 +125,7 @@ it('records real lifecycle completions and one safe server diagnostic with the s
       .get('/auth/me')
       .set('Authorization', 'Bearer synthetic')
       .expect(200)
-      .expect(profile);
+      .expect(expectedProfile);
     sinkFails = false;
     const loggingFailure = jestApi
       .spyOn(logger, 'application')

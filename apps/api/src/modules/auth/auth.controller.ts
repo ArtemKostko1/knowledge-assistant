@@ -21,6 +21,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { ApiResponseNoStatusOptions } from '@nestjs/swagger';
+import type { AppUserProfile } from '@knowledge-assistant/contracts';
 import {
   ApiErrorResponseDto,
   apiErrorResponseHeaders,
@@ -44,6 +45,17 @@ function errorResponse(description: string): ApiResponseNoStatusOptions {
     description,
     headers: noStoreHeaders,
     type: ApiErrorResponseDto,
+  };
+}
+
+function toProfile(
+  user: Awaited<ReturnType<AppUserRepository['upsert']>>,
+): AppUserProfile {
+  return {
+    id: user.id,
+    email: user.email,
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
   };
 }
 
@@ -98,10 +110,11 @@ export class AuthController {
   @ApiInternalServerErrorResponse(
     errorResponse('An unexpected server error occurred.'),
   )
-  async bootstrap(@Req() req: AuthRequest) {
+  async bootstrap(@Req() req: AuthRequest): Promise<AppUserProfile> {
     this.noInput(req);
     const email = await this.auth.confirmedEmail(req.identity);
-    return this.users.upsert(req.identity.id, email);
+    const user = await this.users.upsert(req.identity.id, email);
+    return toProfile(user);
   }
   @Get('me')
   @ApiOperation({
@@ -131,10 +144,10 @@ export class AuthController {
   @ApiInternalServerErrorResponse(
     errorResponse('An unexpected server error occurred.'),
   )
-  async me(@Req() req: AuthRequest) {
+  async me(@Req() req: AuthRequest): Promise<AppUserProfile> {
     this.noInput(req);
     const user = await this.users.find(req.identity.id);
     if (!user) throw new NotFoundException('User not bootstrapped');
-    return user;
+    return toProfile(user);
   }
 }
