@@ -12,6 +12,35 @@ architecture foundation and UI/infrastructure migrations. Preserve working
 authentication, URLs and all unrelated uncommitted changes.
 Repository `AGENTS.md` remains authoritative for permissions and execution budget.
 
+## Frontend architecture evolution
+
+The available Git history does not contain a standalone commit named as a
+frontend architecture refactor. The first tracked frontend, in bootstrap commit
+`a598ab2` (2026-11-02), was a root App Router layout and one home page with a
+smoke test. The current structure was introduced with the Authentication work
+in `49c378d` (merged as `510ae16`, 2026-11-17); the diff adds files rather than
+moving an existing feature tree.
+
+- **Before:** one root page/layout; no auth feature, protected route group,
+  server API adapter, or product UI modules existed in the tracked source.
+- **Problem / context:** the Authentication scope added public auth forms,
+  callbacks, recovery, protected screens, session checks and API orchestration.
+  The change needed owners for these responsibilities. This is inferred from
+  the change set; the commit does not record a separate refactor rationale.
+- **Decision:** keep Next route entrypoints and framework conventions in
+  `src/app/`, feature workflows in `src/features/<feature>/`, genuinely shared
+  UI in `src/components/`, transport adapters in `src/lib/`, and URL/access
+  policy in `src/config/`.
+- **Implementation:** `(auth)` and `(protected)` route groups keep their public
+  URL paths; `src/proxy.ts` calls the explicit access policy; auth and
+  application features own their UI/actions/server orchestration; Supabase and
+  Nest transports remain server/browser adapters as appropriate.
+- **Result / trade-off:** responsibilities are separated without adopting a
+  larger feature framework or generating boilerplate layers. Route groups are
+  organizational, not authorization boundaries. No historical file moves or
+  independently named frontend-refactor commit can be confirmed from this
+  repository's available history.
+
 ## 2. Directory responsibilities
 
 - `src/app/`: Next entrypoints and conventions: pages, layouts, route handlers,
@@ -147,11 +176,23 @@ semantics; changing either requires a separate security decision.
 Root `/` redirects after server verification. `(auth)` provides the public
 auth UI shell; `(protected)` applies the shared SSR check. Route groups do not
 change public URLs and are not security boundaries on their own.
-Proxy matches all routes and denies by default, including new routes outside
-the protected group. Preserve the exact public allowlist and narrow framework
-asset exceptions; never exempt arbitrary extensions or all `/_next/data`.
-Keep auth callbacks/actions accessible without bouncing an ordinary signed-in
-user away from recovery. Preserve the existing 303 handling for denied POSTs.
+Proxy matches all routes and defaults to requiring authentication, including
+new routes outside the protected group. Preserve the exact public allowlist
+and narrow framework asset exceptions; never exempt arbitrary extensions or
+all `/_next/data`. One separate exception forwards `POST /app` with a
+`Next-Action` header to Next before Proxy's `getUser()` check, with
+`Cache-Control: private, no-store`. This preserves the Next action/Flight
+redirect response when a stale tab submits logout after another tab changes the
+shared session. The header is not authorization and the exception is not
+restricted to a particular action ID.
+
+The logout action itself calls `getUser()` before local sign-out; it returns a
+safe error when Auth is unavailable, but can clear an already missing session.
+Do not infer that every action has been checked: future protected actions must
+independently authenticate and authorize. Ordinary protected requests still use
+Proxy's check. Keep auth callbacks/actions accessible without bouncing an
+ordinary signed-in user away from recovery. Preserve the existing 303 handling
+for denied POSTs.
 
 ## 10. Styling: Mantine and CSS Modules
 
@@ -198,6 +239,13 @@ Keep field errors accessible and actionable; catch failures without exposing
 technical details. Recovery requests must not disclose account existence.
 Distinguish unauthenticated, unavailable and successful states; never retry
 invalid credentials automatically or add delays to hide a failure.
+
+Current loading/error patterns are feature-owned: `AuthForm` and
+`ForgotPasswordForm` keep local pending/status state; `RecoveryForm` and
+`LogoutButton` use `useActionState`; the protected `/app` page renders the
+discriminated `ProfileResult` as a safe error or profile. There are currently no
+route-level `loading.tsx` or `error.tsx` files. Add route boundaries only when a
+route needs them, rather than creating empty boilerplate.
 
 ## 13. Tests
 

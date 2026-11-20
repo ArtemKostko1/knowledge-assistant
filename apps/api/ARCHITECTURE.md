@@ -117,7 +117,9 @@ main.ts -> AppModule -> HealthModule
   Prisma client construction, schema, and migrations. API code must not move
   Prisma schema or generated-client ownership into `apps/api`.
 - `packages/contracts` is browser-safe. Keep Prisma and server-only SDKs out of
-  `apps/web`; the API currently does not import the contracts package.
+  `apps/web`. The Auth controller and response class use a type-only
+  `AppUserProfile` import from the contracts package for compile-time
+  consistency.
 - `packages/backend` is a placeholder and is not a required dependency
   abstraction for the current Nest modules.
 - Avoid feature-to-feature imports and cyclic module dependencies. The
@@ -269,6 +271,64 @@ Supertest after the production ordering (`request ID` → `httpCompletion` →
 `authNoStore` → Swagger setup → isolated parsers → `app.init()`/Nest routes
 and error handler). Preserve
 Authentication statuses, success payloads, and `Cache-Control: no-store`.
+
+## Stage 5: Type safety and HTTP contracts
+
+These changes refine existing API boundaries; they do not change the ownership
+rules in this document. The implementation commits are linked in the
+[system architecture history](../../docs/architecture.md#architecture-evolution-and-decision-record).
+
+### Scope A — Prisma to HTTP DTO projection
+
+`AppUserRepository` returns persistence data to the Auth feature. The
+controller's `toProfile()` selects the public fields and converts dates to ISO
+strings as `AppUserProfile`; `AppUserProfileResponse` implements that
+browser-safe contract and declares Swagger metadata. Both import the contract
+as a type; the response class describes the schema while the controller
+explicitly projects the returned object. The Prisma model itself is not an
+HTTP response type. Compile-time types do not replace runtime boundary
+validation. Keep mapping at the API boundary and add fields to the public
+contract deliberately.
+
+### Scope B — Supabase runtime type safety
+
+Treat the Supabase SDK response at the provider boundary as runtime data.
+`AuthUserService.confirmedEmail()` verifies the returned user object, ID,
+email and confirmation timestamp before using them. Provider TypeScript
+declarations do not replace validation of an external response.
+
+### Scope C — Safe unknown errors
+
+The API does not trust arbitrary `status`, `statusCode`, `expose`, message or
+other properties on unknown exception objects. `SafeExpressAdapter` preserves
+unknown errors for the shared formatter/filter; parser-specific classifications
+are made only in the isolated parser boundary where provenance is known.
+Regression tests for these cases are in `apps/api/test/http-errors.spec.ts`;
+they were added in a separate follow-up commit, not the original fix.
+
+### Scope D — Authenticated principal typing
+
+`AuthGuard` reads a pre-authentication request whose `identity` is optional,
+validates the Bearer token, then assigns `CheckedIdentity`. The controller
+receives `AuthRequest` with a required verified identity. Do not type an
+unverified request as already authenticated or use a client-supplied identity.
+
+### Scope E — Logging event types audit
+
+The audit required no production-code change. `SafeLogger.application()` keeps
+its runtime event allowlist and field projection; TypeScript declarations do
+not replace those checks. The audit left two P2 compile-time limitations as
+technical debt:
+
+- `http.request.completed` does not type-correlate `statusCode` with
+  `outcome` (`finished` can omit it and `aborted` can include it).
+- `http.request.failed` uses a broad numeric status and the general API error
+  code union, so it permits semantically mismatched status/code pairs.
+
+Current producers form the expected shapes, and runtime projection continues
+to normalize invalid values. Do not describe a proposed discriminated-union
+refinement as implemented, weaken the runtime allowlist, or change log-record
+shape without separate approval.
 
 ## TypeScript and verification
 

@@ -10,6 +10,14 @@
 ## Language and boundaries
 
 - Speak with the human in Russian. Code, UI, documentation, commits, and PRs are in English. Use Conventional Commits.
+- For all agents and future tasks, use English for agent-to-agent handoffs,
+  prompts, acceptance criteria, technical instructions, and reports, regardless
+  of the owner's language. The Orchestrator communicates with the project
+  owner in Russian and accurately translates or adapts internal reports.
+  Preserve existing language conventions for code, documentation, filenames,
+  and contracts; do not automatically translate them. The Documentation Agent's
+  approved Russian incident documentation under `docs/problems/` is an artifact
+  exception, not an exception for agent-to-agent reports.
 - Web owns UI/API interaction, not product database CRUD or final authorization decisions.
 - API owns business rules and authorization. Worker owns async jobs. Supabase provides Auth, PostgreSQL, Storage and pgvector.
 - Browser-safe contracts belong in `packages/contracts`; never import server-only packages or Prisma into web.
@@ -43,6 +51,29 @@
 - Production logging is JSON Lines on stdout/stderr; LOG_LEVEL accepts only info/debug and cannot disable error/fatal. Do not introduce transports, ALS, tracing or external monitoring without separate approval.
 - Keep `packages/database` responsible for Prisma client/schema/migrations and `packages/contracts` browser-safe. Do not move product CRUD or server-only dependencies into web.
 
+## Frontend / Next.js Standards
+
+- Keep App Router entrypoints thin under `apps/web/src/app/`; place feature
+  behavior in `src/features/<feature>/`, reusable feature-independent UI in
+  `src/components/`, and external transport adapters in `src/lib/`.
+- Server Components are the default. Use Client Components only for interactive
+  leaves; keep tokens, session objects and internal configuration server-side.
+- Route groups organize pages but do not grant access. Preserve the explicit
+  default-deny access policy, verify users server-side, and enforce authorization
+  inside each protected Server Action and API operation.
+- Use `src/lib/api/server.ts` for server-to-server API transport and
+  `packages/contracts` for browser-safe shared types. Web does not own product
+  database CRUD or final authorization and must not import Prisma/database/queue
+  packages.
+- Validate untrusted action/form input on the server, return safe typed UI
+  states, and do not expose raw SDK/network errors. Preserve authentication,
+  recovery, cookie, redirect, CSP and cache invariants.
+- Prefer Mantine components/tokens; add CSS Modules or shared abstractions only
+  for a real repeated responsibility. Keep deterministic Vitest/Testing
+  Library tests with the owning route or feature.
+- Follow [Frontend Architecture](apps/web/ARCHITECTURE.md) and
+  [Frontend Authentication](apps/web/AUTHENTICATION.md) for concrete examples.
+
 ## Git and Pull Request workflow
 
 ### Branching
@@ -56,15 +87,22 @@
 ### Implementation and review
 
 - Orchestrator defines task scope, allowed paths, and acceptance criteria before implementation.
+- The Orchestrator audits and proposes; the human approves architecture and
+  scope before code implementation starts.
 - Implementer works only within the approved scope.
-- Run targeted tests and relevant quality checks before requesting review.
-- Reviewer independently reviews the final changes and remains read-only.
+- Tester verifies the approved behavior with focused tests and reports results.
+- Reviewer independently reviews the final changes in a separate context and
+  remains read-only. A self-check is not independent review.
 - Resolve BLOCKER and HIGH findings before requesting commit approval.
 - Do not launch unnecessary review or documentation agents for trivial changes.
 
 ### Commit and push
 
 - Never commit or push without separate, explicit human approvals.
+- By default, the human performs `git add`, commit, push, PR publication, merge,
+  and other Git/PR state changes. An agent may do a specific operation only if
+  the owner explicitly changes this rule for that task; required separate
+  approvals still apply.
 - Before commit, report changed files, relevant checks, review result, and remaining risks.
 - Stage only explicitly approved files.
 - Run `git diff --cached --check` and inspect staged changes.
@@ -106,7 +144,10 @@
 - Parallel writers must own non-overlapping files. No recursive delegation by default. An agent cannot grant itself approval.
 - Report changed paths, checks run, checks skipped, risks, and next human gate.
 
-See `docs/ai/agents/` for detailed role contracts and `.cursor/skills/` for repeatable workflows.
+See [system architecture](docs/architecture.md), [development workflow](docs/development.md),
+[API architecture](apps/api/ARCHITECTURE.md), [frontend architecture](apps/web/ARCHITECTURE.md),
+and `docs/ai/agents/` for detailed role boundaries. `.cursor/skills/` contains
+repeatable repository workflows.
 
 ## AI Execution Budget and Efficiency
 

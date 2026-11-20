@@ -1,36 +1,241 @@
-# Stage 1 architecture (verified from repository files)
+# System Architecture
 
-This describes the checked-in source and configuration, not deployed behavior. The API Authentication endpoints are implemented; see [`apps/api/AUTHENTICATION.md`](../apps/api/AUTHENTICATION.md). **Not implemented yet:** organization membership/role authorization, knowledge-base and document CRUD, ingestion, retrieval, widget/chat, billing, and production job handlers. Supabase's local Auth/Storage services being configured does not establish production integration.
+This document describes the checked-in source and configuration at the current
+`main` snapshot. It does not claim a production deployment, successful current
+CI run, or database migration state. The repository's architecture evolved from
+the November 2026 monorepo bootstrap through the Authentication, API, type-safety,
+and Prisma task-ordering work; relevant commits are listed below.
 
-## Workspace and ownership
+## Product scope
 
-`pnpm-workspace.yaml` selects `apps/*` and `packages/*`; the root `package.json` pins pnpm 12.16.1 and delegates `dev`, `build`, `lint`, `typecheck`, and `test` to Turbo. `turbo.json` makes `dev` persistent and uncached; `build` depends on upstream builds and caches `.next/**` and `dist/**`; `lint` and `typecheck` depend on their respective upstream tasks; `test` depends on upstream tests and disables caching. Only packages with a matching script participate in a given task. The repository also contains `supabase/`, `infra/docker/`, `tests/e2e/`, and `.github/workflows/check.yml` outside workspace selection.
+Implemented: Next.js Authentication UI and protected application shell; Supabase
+Auth-backed signup, login, email confirmation and password recovery; NestJS
+JWT verification and AppUser bootstrap/profile endpoints; Prisma persistence
+for the AppUser model; API health endpoint; and a pg-boss worker process.
 
-- `apps/web`: Next.js 16 App Router with TypeScript, React 19, Mantine provider and styles in `src/app/layout.tsx`, and a static bootstrap home page in `src/app/page.tsx`. `src/app/page.test.tsx` is a component smoke test. `next.config.ts` is empty. The web manifest declares `@knowledge-assistant/contracts`, but the current page does not import it or call the API/Supabase. No product routes, forms or client integrations exist.
-- `apps/api`: NestJS 12 ESM with feature-local Auth and Health modules. Bootstrap uses SafeExpressAdapter, server request IDs, completion instrumentation, Authentication no-store/input middleware, Swagger and isolated default Express parsers before Nest routes. The global DI exception filter and parser boundary share the safe error formatter. SafeLogger supplies production JSON/development text logs without raw request/error data. Swagger remains hard-off in production; no global validation pipe is installed. See [`apps/api/ARCHITECTURE.md`](../apps/api/ARCHITECTURE.md) for the current lifecycle, logging policy and known Stage 3 limitations. API source imports `@knowledge-assistant/database`; CRUD and provider integrations stay server-side.
-- `apps/worker`: ESM Node process in `src/main.ts` checks `DATABASE_URL` using its **own local** `src/config.ts`, constructs `PgBoss` with that URL, starts it, logs readiness and drains on SIGINT/SIGTERM. Startup, background and shutdown errors fail the process with credential-safe messages; lifecycle fake tests do not require PostgreSQL. pg-boss owns and automatically provisions/upgrades its own `pgboss` schema on worker startup (`migrate: true` by default), distinct from Prisma's product schema. Start only one worker for initial provisioning; the API does not use pg-boss. No queue names, producers, handlers, job registration, or shared backend/database imports exist in its source.
-- `packages/contracts`: browser-safe workspace package exporting `AppUserProfile` for the Authentication profile response. Keep browser imports limited to browser-safe contracts; do not expose server-only packages.
-- `packages/backend`: server-only placeholder (`src/index.ts` exports nothing), declares a dependency on `@knowledge-assistant/database`; no backend services are implemented.
-- `packages/database`: server-only Prisma boundary. The `prisma-client` generator points at `prisma/generated/client`; `schema.prisma` includes the `AppUser` model used by API Authentication. The migrations include the AppUser table and the existing pgvector extension migration. The package exports `createDatabase`, which constructs the Prisma client; `apps/api` uses it through `AppUserRepository`. No `PrismaModule` is required. Migration application state depends on the target database and is not asserted here.
-- `packages/config-typescript`, `packages/config-eslint`, `packages/config-prettier`: reusable compiler, lint and formatter config files; their actual adoption is detailed in [development](development.md).
+Not implemented: organization membership/role authorization, knowledge-base or
+document CRUD, ingestion, embeddings/retrieval, chat/widget, billing, queue
+producers/handlers, and product background jobs. Supabase Storage is configured
+for local development but is not used by current application code. The
+`/health` endpoint reports API process health only.
 
-## Boundaries and environment
+## System overview
 
-`AGENTS.md` specifies responsibility: web handles UI/API interaction, API owns business rules and authorization, worker owns async jobs, and Supabase supplies Auth/PostgreSQL/Storage and pgvector. The API Authentication integration is implemented; organization-scoped product authorization, storage access, ingestion, and other product features remain future work. `apps/web/eslint.config.mjs` forbids imports from backend, database, `@prisma/*`, `pg`, and `pg-boss` in TS/TSX files. Current web code imports none of these. API and worker are not connected to `packages/backend` in source.
+```mermaid
+flowchart LR
+  Browser[Browser] --> Web[Next.js web]
+  Web -->|Signup, login, recovery, user verification| Auth[Supabase Auth]
+  Web -->|Server-side Bearer requests| API[NestJS API]
+  API -->|JWKS and getUser(token)| Auth
+  API --> UserRepo[AppUserRepository]
+  UserRepo --> DBPackage[packages/database]
+  DBPackage --> PG[(PostgreSQL)]
+  Worker[Worker] --> Queue[pg-boss]
+  Queue --> PG
+```
 
-The Supabase CLI (`supabase/config.toml`) configures local PostgreSQL 17 on 54322, API gateway on 54321, Auth, Storage and email preview on 54324. Root `supabase:start` excludes `realtime,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor` at invocation despite some of these being marked enabled in the TOML. Excluded `vector` is the CLI log-shipper service; it is **not** the PostgreSQL pgvector extension. `[storage.vector]` is a separate storage setting, not the Prisma pgvector migration. Do not infer extension installation from either CLI configuration or the presence of the SQL file: migration application requires a database operation.
+The browser owns presentation and starts user-facing Supabase Auth flows. The
+Next.js server verifies sessions and calls the API without exposing access
+tokens to Client Components. The API independently verifies the Bearer JWT,
+re-checks the current Supabase user for bootstrap, and owns AppUser writes.
+`packages/database` owns Prisma client construction, schema and migrations.
+The worker currently starts pg-boss against PostgreSQL but registers no product
+jobs. Supabase-owned Auth/Storage schemas are not modeled or migrated by Prisma.
 
-`compose.yaml` builds **three application services** (`web`, `api`, `worker`) from `infra/docker/Dockerfile`, not the Supabase services. The Dockerfile installs pnpm, installs the locked workspace, builds the selected app, then runs its `start` script. The API publishes 3001, web publishes 3000, and worker has no published port. Compose's `extra_hosts` mapping allows containers to reach host-run CLI services through `host.docker.internal`; see [local development](development.md).
+## Monorepo and ownership
 
-## Agent instructions and status
+The pnpm workspace includes `apps/*` and `packages/*`. Supabase configuration,
+Docker/Compose, root scripts, end-to-end smoke tests and GitHub Actions live
+outside the pnpm workspace.
 
-`AGENTS.md` gives approval, quality, secret-handling and role boundaries. `docs/ai/agents/README.md` elaborates handoffs and review. `.cursor/agents/` contains role definitions for **orchestrator, implementer, tester, reviewer, security-reviewer, documentation-agent, platform-implementer**. `.cursor/skills/` contains **local-environment, task-handoff, verify-and-review** workflows. These are repository configuration/guidance files: their existence **does not imply any agent has run or that these roles/skills are available in every tool or session**. Follow the current human-approved scope and active harness, not a presumed delegation.
+| Path                                                             | Responsibility and current boundary                                                                                                                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web`                                                       | Next.js 16 App Router, React 19, Mantine UI, Supabase browser/SSR clients, protected route handling, and server-side API orchestration. It does not own product CRUD or final authorization.   |
+| `apps/api`                                                       | NestJS 12 HTTP application. Feature modules own controllers/providers; API owns business rules, JWT verification and authorization decisions. Current feature modules are `auth` and `health`. |
+| `apps/worker`                                                    | Node.js process using pg-boss. It owns asynchronous jobs when introduced; currently it starts the queue and handles lifecycle failures, with no product jobs.                                  |
+| `packages/contracts`                                             | Browser-safe TypeScript contract for `AppUserProfile`, consumed by web and API.                                                                                                                |
+| `packages/database`                                              | Server-only Prisma client, `AppUser` schema and migrations, and database factory. It does not own HTTP DTOs or Supabase-managed schemas.                                                       |
+| `packages/backend`                                               | Server-only placeholder; no application service is currently implemented or imported by API/worker source.                                                                                     |
+| `packages/config-typescript`, `config-eslint`, `config-prettier` | Shared compiler, lint and formatter configuration. The root Prettier configuration is authoritative for root commands.                                                                         |
+| `infra/docker`, `compose.yaml`                                   | Multi-stage application image and local `client`, `api`, and `worker` containers. Supabase CLI services run separately.                                                                        |
+| `supabase`                                                       | Local Supabase CLI configuration, including PostgreSQL, Auth, Storage and email preview. Configuration does not imply a hosted deployment.                                                     |
+| `tests/e2e`                                                      | Playwright HTTP smoke test for an already-running API; it is not a browser product-flow suite.                                                                                                 |
 
-## Documentation findings / inconsistencies
+### Dependency and trust boundaries
 
-- `@knowledge-assistant/backend` is declared by API and worker and depends on `@knowledge-assistant/database`, but neither app imports backend. `packages/backend` remains a placeholder; `packages/contracts` exports `AppUserProfile`, and `packages/database` provides the AppUser persistence boundary used by Authentication. Dependency graph configuration is not a runtime call graph.
-- `@knowledge-assistant/config-prettier/index.json` duplicates the root `.prettierrc.json` settings but is not referenced by that root configuration. Prettier uses the root config for repository commands.
-- `supabase/config.toml` enables several optional services while the root `supabase:start` script excludes them. Effective local services depend on the command used, not only TOML `enabled` fields.
-- Compose supplies `NEXT_PUBLIC_*` only as web **runtime** environment, after `next build` ran in the Dockerfile. Next.js client-side variables are typically embedded at build time; Compose environment values alone cannot be assumed to configure the built client bundle. The current placeholder page reads none of these variables.
-- `compose.yaml` passes the required database and Supabase Authentication settings to the API; API configuration validates these at startup. `/health` remains process-only and cannot prove database/Supabase availability. `SUPABASE_URL` is also passed to the worker, whose source reads only `DATABASE_URL`.
-- The Prisma schema includes the Authentication `AppUser` model. The API uses the database package's Prisma factory through its feature repository. No database state or migration application was verified by this document.
+- Web imports browser-safe contracts only; it must not import Prisma,
+  `packages/database`, `pg`, queue packages, or other server-only modules.
+- Web sends authenticated API requests from server code. `API_INTERNAL_URL`
+  takes precedence over `NEXT_PUBLIC_API_URL`; the bearer token remains
+  server-side.
+- The API derives the authenticated principal from a verified JWT, not from a
+  client-provided organization or user ID. Organization-level product
+  authorization does not exist yet and must not be implied by the current
+  Authentication guard.
+- API repositories use `packages/database`; Prisma models are projected into
+  explicit HTTP contracts. Do not expose Prisma models as API responses.
+- The worker is the owner for future async processing. Queue handlers must be
+  idempotent; no product handler currently exists.
+- Supabase supplies Auth and local PostgreSQL/Storage services. The current
+  application uses Auth; it does not expose Storage or document listing.
+
+## Current HTTP surface
+
+The API currently exposes:
+
+- `GET /health` → `{ "status": "ok" }`; process-only health.
+- `POST /auth/bootstrap` → verifies the authenticated Supabase user and
+  upserts its AppUser record; accepts no body or query.
+- `GET /auth/me` → returns an existing AppUser profile; accepts no body or
+  query and does not create the profile.
+
+Authentication endpoints use Bearer JWT verification and `Cache-Control:
+no-store`. Web route groups organize pages but are not security boundaries:
+the Next.js Proxy, server operations and API each enforce their own
+responsibility. See [API architecture](../apps/api/ARCHITECTURE.md),
+[API Authentication](../apps/api/AUTHENTICATION.md), and
+[web Authentication](../apps/web/AUTHENTICATION.md) for the detailed contracts.
+
+## Architecture evolution and decision record
+
+The available Git history begins at `a598ab2` (2026-11-02) and ends at
+`b87990f` (2026-11-19), the current `main` snapshot. Short SHAs below identify
+the implementation commits; where the repository does not record a rationale,
+the note is labeled as an architectural interpretation rather than historical
+fact. There is no separate ADR directory in the current documentation tree;
+this section records the decisions without introducing a new ADR system.
+
+### Frontend structure and Authentication — `49c378d`, merged as `510ae16`
+
+- **Before:** the bootstrap commit `a598ab2` contained a root App Router layout,
+  a single home page, and its smoke test.
+- **Problem / context:** the Authentication change introduced public auth
+  screens, protected application UI, callbacks, recovery, session verification,
+  and authenticated API orchestration. The commit adds these as distinct
+  responsibilities. The commit does not state a separate architecture-refactor
+  rationale.
+- **Decision / implementation:** keep Next App Router entrypoints under
+  `src/app/`, organize auth and application behavior under
+  `src/features/<feature>/`, share feature-independent UI through
+  `src/components/`, and isolate Supabase/API transport in `src/lib/`.
+  Route groups `(auth)` and `(protected)` preserve URL paths; `src/proxy.ts`
+  applies the explicit access policy.
+- **Result / trade-off:** routes and feature responsibilities are separated
+  while server/client boundaries remain explicit. The history shows new files,
+  not a rename/move of an earlier feature tree; no independent frontend-refactor
+  commit is available. Historical detail and current rules are in
+  [Frontend Architecture](../apps/web/ARCHITECTURE.md).
+
+### Modular NestJS API — `6d8a09a`, merged as `2fea9bb`
+
+- **Context:** Authentication/API concerns initially lived in a small bootstrap
+  layout; more endpoints required explicit feature ownership.
+- **Decision / implementation:** organize API features under
+  `apps/api/src/modules/<feature>/`, keep `AppModule` as the composition root,
+  and keep shared HTTP infrastructure under `src/common/`.
+- **Rationale / trade-off:** current module boundaries and DI avoid placing all
+  behavior in a single application module. Feature modules export only
+  providers with a concrete external consumer; `packages/backend` remains a
+  placeholder rather than a required extra layer.
+
+### Supabase Authentication and persistence boundary — `49c378d`, `510ae16`
+
+- **Decision / implementation:** Supabase Auth handles user signup, login,
+  confirmation and recovery. The API verifies configured ES256 JWTs and
+  performs a fresh `getUser(token)` check when bootstrapping. API code uses
+  `AppUserRepository` and `packages/database`; web owns SSR/session and
+  server-to-server API integration.
+- **Rationale / trade-off:** provider identity is checked independently by the
+  API and the AppUser record is keyed by the verified UUID. This implements
+  Authentication only; it does not implement organization membership, roles,
+  or authorization for future product resources.
+- **Migration boundary:** Prisma owns `AppUser` and the repository's product
+  migrations. Supabase Auth tables/schemas remain Supabase-owned. A migration
+  file being present does not prove it has been applied to any database.
+
+### OpenAPI, HTTP errors and safe logging — `680af90`/`35a3987`,
+
+`89bdbf6`/`cf517ca`, `2800283`/`a0c848a`
+
+- **OpenAPI:** Swagger decorators and response classes describe actual API
+  endpoints. `/docs` and `/docs-json` are enabled by default outside production;
+  `SWAGGER_ENABLED=false` disables them. They are always disabled in
+  production. Runtime HTTP behavior remains the source of truth; OpenAPI must
+  match it.
+- **HTTP errors:** one typed formatter is shared by the Nest global filter and
+  the isolated Express parser boundary. Request IDs are generated by the
+  server; arbitrary exception fields/messages are not trusted or serialized.
+  The adapter preserves unknown exception provenance until the safe filter.
+- **Logging:** `SafeLogger` wraps Nest's `ConsoleLogger`; application events
+  are projected through a runtime allowlist. Production output is JSON Lines;
+  normal events go to stdout and error/fatal events to stderr. The trade-off is
+  intentional loss of raw exception diagnostics and no delivery guarantee on
+  broken output or abrupt termination.
+- **Compatibility:** these boundaries preserve existing response contracts,
+  Authentication `no-store`, and request-ID correlation. Changes to HTTP
+  payloads, headers, logging record shape, or runtime policy require separate
+  approval.
+
+### Stage 5 type safety and contracts — `ddf1855`/`dbb1ed1`,
+
+`b0fc788`/`c41c087`, `f8e460e`/`676f732`, `a591821`/`8545375`,
+`6b63bb8`/`a558ec2`
+
+- **Scope A — Prisma to HTTP DTO projection:** API response types no longer
+  expose Prisma model types. `AppUserProfile` is browser-safe; the API selects
+  fields, converts dates to ISO strings, and declares a Swagger response class.
+- **Scope B — Supabase runtime type safety:** the SDK user response is treated
+  as untrusted at the boundary and checked before its ID, email, and
+  confirmation state are used.
+- **Scope C — unknown error handling:** unknown HTTP/parser errors are handled
+  without trusting arbitrary object properties. Regression tests were restored
+  in the separate follow-up `8545375` (#12).
+- **Scope D — authenticated principal typing:** pre-authentication requests
+  model identity as optional; the guard assigns a verified `CheckedIdentity`
+  before protected controller use.
+- **Scope E — logging event type audit:** no production code changed. The
+  runtime event allowlist remains in force. Two P2 compile-time constraints
+  remain documented technical debt: completion `statusCode` is not correlated
+  with `outcome`, and failed-event `statusCode`/`errorCode` types permit
+  semantically inconsistent combinations. Runtime projection still validates
+  and normalizes records. Do not describe proposed type refinements as
+  implemented.
+
+### Prisma generation ordering — `6459688`, merged as `b87990f` (#14)
+
+Both `@knowledge-assistant/database#build` and
+`@knowledge-assistant/database#typecheck` run Prisma Client generation into the
+same package output directory. `turbo.json` makes database `typecheck` depend
+on its same-package `build`, in addition to upstream dependencies, so the two
+generation steps do not run concurrently within one Turbo invocation. This
+does not serialize independent Turbo/pnpm processes sharing a checkout.
+The fix is present in `main`; this documentation does not assert that a
+post-fix GitHub Actions run passed. The configured workflow is
+`.github/workflows/check.yml`.
+
+## Operational configuration
+
+`compose.yaml` runs the application containers (`client`, `api`, `worker`).
+The Supabase CLI starts its local services separately. Containers reach
+host-exposed Supabase/PostgreSQL ports using `host.docker.internal`; host
+processes use loopback URLs. Public `NEXT_PUBLIC_*` values are supplied to the
+Next build and become part of the client bundle; changing only container
+runtime values does not rebuild that bundle.
+
+The root Supabase start script excludes optional CLI services, including the
+CLI's `vector` log shipper; this is distinct from the PostgreSQL `pgvector`
+extension migration. The worker's first pg-boss startup can create or upgrade
+its own `pgboss` schema. Start only one worker for initial provisioning and use
+an intended local database with the required DDL permissions. See
+[Development](development.md) for commands, environment categories, checks,
+and local database safeguards.
+
+## Related documentation
+
+- [Frontend architecture](../apps/web/ARCHITECTURE.md) and
+  [Authentication flow](../apps/web/AUTHENTICATION.md)
+- [API architecture](../apps/api/ARCHITECTURE.md) and
+  [Authentication API](../apps/api/AUTHENTICATION.md)
+- [Development workflow](development.md)
+- [Direct dependencies](dependencies.md)
+- [AI-agent instructions](../AGENTS.md) and [agent roles](ai/agents/README.md)

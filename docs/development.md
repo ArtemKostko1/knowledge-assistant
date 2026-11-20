@@ -1,83 +1,207 @@
-# Stage 1 local development and checks
+# Development Guide
 
-These commands describe the bootstrap configuration. Database-changing commands require a deliberate local target; static checks do not prove that a database migration ran.
+Commands and configuration below are taken from the current root and workspace
+manifests, Compose file, Supabase CLI configuration, and CI workflow. They
+describe local development, not production deployment. Never run database
+commands against a remote or otherwise unintended target.
 
-## Prerequisites and local stack
+## Prerequisites and installation
 
-- `.node-version` specifies Node 24.22.2; the root pins pnpm 12.16.1, requires Node `>=24.0.0 <27`, and `.npmrc` enables package-manager version management and strict peer dependencies. The Dockerfile pins Node 24.22.2 and installs pnpm 12.16.1. Docker Desktop with a Linux engine is needed for Compose and the Supabase CLI stack.
-- `pnpm install --frozen-lockfile` uses the checked-in lockfile. `pnpm supabase:start` invokes `supabase start --exclude realtime,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor`. PostgreSQL (54322), API gateway (54321), Auth, Storage and local email preview (54324) are the intended CLI components. The excluded `vector` is not PostgreSQL's pgvector extension; `[storage.vector]` in the TOML is a separate storage feature. Supabase CLI starts its own containers, not the three Compose app containers.
-- Obtain **local** key values with `pnpm exec supabase status`; do not paste output into documentation, logs or commits. Copy `.env.example` to `.env` and replace key placeholders. `.gitignore` and `.dockerignore` exclude `.env` and `.env.*` except `.env.example`, including nested Docker-context files. No AI credentials are declared; no live AI calls belong to this stage.
-- To apply the only Prisma migration, point `DIRECT_URL` at local PostgreSQL (for example the host-local `127.0.0.1:54322` endpoint with your local credentials) and run `pnpm db:migrate`. This changes a database and must be used only on the intended local instance. `pnpm db:check` also needs `DIRECT_URL`, because `packages/database/prisma.config.ts` reads it during Prisma validation. The SQL creates `vector` in the `extensions` schema; neither the migration file nor the datasource declaration proves that it has run. Supabase-owned schemas are not modeled by Prisma here.
-- `docker compose up --build` builds and starts web, API and worker. `docker compose down` stops these app containers without requesting volume deletion; `pnpm supabase:stop` stops the separate CLI stack. Do not delete volumes unless local data loss is intended.
+- Node.js `24.22.2` (`.node-version`) and pnpm `12.16.1` (root
+  `packageManager`).
+- Docker Desktop with the Linux engine for the local Supabase stack and
+  Compose.
 
-### Host debugging versus Compose
+From the repository root:
 
-Compose uses `host.docker.internal` (mapped with `extra_hosts: host-gateway`) for its database default and `SUPABASE_URL` to reach host-exposed Supabase CLI ports. Compose uses `COMPOSE_DATABASE_URL` if set, **not** the host `DATABASE_URL` in `.env`; its default is `postgresql://postgres:postgres@host.docker.internal:54322/postgres`. On the host, `.env` should set `DATABASE_URL` and `DIRECT_URL` to local `127.0.0.1:54322` endpoints; `DIRECT_URL` is used only by Prisma commands, not passed to Compose apps. `SUPABASE_URL` can be changed to `http://127.0.0.1:54321` for host tooling. The API consumes it, `SUPABASE_ANON_KEY`, the configured JWT issuer/audience/algorithm, and `DATABASE_URL` for Authentication; the worker source reads `DATABASE_URL`. Web's placeholder currently reads no environment variables. `PORT` is read by the API (default 3001).
-
-From PowerShell in the repository root (after installing dependencies and starting the intended **local** Supabase stack):
-
-```powershell
-Copy-Item .env.example .env
-# Edit .env: enter local keys and confirm DATABASE_URL/DIRECT_URL target 127.0.0.1:54322.
-npm exec --offline --package=pnpm@12.16.1 -- pnpm db:migrate
-npm exec --offline --package=pnpm@12.16.1 -- pnpm dev
+```sh
+pnpm install --frozen-lockfile
 ```
 
-If `pnpm` is on PATH, use `pnpm` instead of the offline `npm exec` wrapper. `pnpm --filter @knowledge-assistant/worker dev` also loads the root `.env` when run from the root; Turbo forwards the configured `passThroughEnv` allowlist (including the API Authentication environment) to dev tasks, while Node's `--env-file-if-exists` loads `.env` in API/worker app directories. A missing `.env` is tolerated by the loader, but worker then fails safely if `DATABASE_URL` is absent and API Authentication configuration fails closed when required settings are absent. Existing exported variables override the file; check the target before starting a worker. These scripts require Node 24+ and do not read `.env` in Docker production (`start` uses injected Compose environment).
+The pnpm workspace selects `apps/*` and `packages/*`. The Supabase CLI project
+is configured separately in `supabase/config.toml`.
 
-`.env.example` categories: server-side `DATABASE_URL` (host worker/API), optional `COMPOSE_DATABASE_URL` (container worker/API override), `DIRECT_URL` (Prisma CLI), `SUPABASE_URL` and `SUPABASE_ANON_KEY` (API Authentication uses trusted Auth/JWKS routing and a public key), `SUPABASE_JWT_ISSUER`, `SUPABASE_JWT_AUDIENCE`, `SUPABASE_JWT_ALGORITHM`, and `PORT` (API). `SUPABASE_SERVICE_ROLE_KEY` is declared but not used by application source. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_API_URL` are explicitly **public build-facing** Next.js variables, declared but not read by current web source. Never put service-role credentials in `NEXT_PUBLIC_*`. Compose passes the Auth settings, database URL and `NODE_ENV` to API; `DATABASE_URL` and `SUPABASE_URL` to worker; and the three public variables to web. Beware that public Next.js variables supplied only as Compose runtime environment do not necessarily change a client bundle built earlier by the Dockerfile.
+## Local Supabase, environment and database
 
-The first `boss.start()` can **create or upgrade** pg-boss's own `pgboss` schema (default `migrate: true`); this is library DDL, separate from the Prisma-managed product/pgvector migration. The database role used by `DATABASE_URL`/`COMPOSE_DATABASE_URL` needs schema creation/alter permissions. Provision only against the intended local DB and start **one worker for initial installation/upgrade** before starting additional workers; the API does not start pg-boss or run queue migrations. Later workers use the installed version. On a failed migration, inspect permissions/version before retrying; do not point a worker at a remote DB without separate approval. pg-boss pool/background errors are fatal: worker logs generic messages without connection credentials, attempts to stop once and exits unsuccessfully; SIGINT/SIGTERM drain the queue, and stop failures also fail the process. Separately provisioning with `migrate: false` would be a different operating model and is **not** enabled here.
+Start the configured local Supabase services and inspect their local settings:
 
-## Scripts and verification
+```sh
+pnpm supabase:start
+pnpm exec supabase status
+```
+
+The root script excludes optional services from the CLI invocation. PostgreSQL
+uses port `54322`, the Supabase API/Auth endpoint uses `54321`, and the local
+email preview is available at `54324`. The CLI service named `vector` is a log
+shipper; it is not the PostgreSQL `pgvector` extension.
+
+Copy `.env.example` to `.env` and configure local values. Do not copy real keys
+into documentation, terminal transcripts, or commits. Relevant variable names:
+
+- Host API/worker database and Prisma CLI: `DATABASE_URL`, `DIRECT_URL`.
+- Compose API/worker database: `COMPOSE_DATABASE_URL` is required and passed
+  to both services as `DATABASE_URL`.
+- Host API Auth settings: `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+  `SUPABASE_JWT_ISSUER`, `SUPABASE_JWT_AUDIENCE`,
+  `SUPABASE_JWT_ALGORITHM`, and optional `PORT`/`LOG_LEVEL`.
+- Compose Supabase routing: `COMPOSE_SUPABASE_URL`; Compose passes it as
+  `SUPABASE_URL` to the API and `SUPABASE_INTERNAL_URL` to the web server.
+- Next public build inputs: `NEXT_PUBLIC_API_URL`,
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- The example also declares `SUPABASE_SERVICE_ROLE_KEY`; current application
+  source does not use it. Never expose a service-role/secret key to browser
+  code or put one in a `NEXT_PUBLIC_*` variable.
+
+On the host, use loopback URLs for local Supabase. Containers use
+`host.docker.internal` to reach the host-published services; Compose's
+`COMPOSE_DATABASE_URL` is separate from host `DATABASE_URL`. Verify all targets
+before starting apps or applying migrations.
+
+The root `db:check` and `db:migrate` scripts delegate to the database
+workspace's `prisma validate` and `prisma migrate deploy` commands. The Prisma
+config reads `process.env.DIRECT_URL`, falling back to an empty string when it
+is unset. Its comment describes generate/validate as offline and migration as
+requiring `DIRECT_URL`. The manifests do not explicitly load the root `.env`
+for these database commands. Whether the installed pnpm/Prisma combination
+loads an env file implicitly, and whether validation succeeds with an empty
+URL, has not been verified here; do not assume either behavior.
+
+For migrations, explicitly provide the intended local `DIRECT_URL` in the
+environment inherited by pnpm and privately verify the effective host, port
+and database before running the command. Do not print the URL or credentials.
+An already exported value can differ from the value in `.env`; verify the
+effective process environment rather than only the file. In the Node
+`--env-file` and `--env-file-if-exists` development launchers described below,
+an existing process environment value takes precedence over the file. Those
+launchers are separate from the database scripts and do not establish their
+environment loading behavior.
+
+`pnpm db:check` runs Prisma schema validation; the config does not unconditionally
+require a nonempty `DIRECT_URL`. To generate the Prisma client without applying
+a migration:
+
+```sh
+pnpm --filter @knowledge-assistant/database db:generate
+```
+
+To apply the checked-in Prisma migrations to the configured database:
+
+```sh
+pnpm db:migrate
+```
+
+This changes the target database. Confirm the effective `DIRECT_URL` points to
+the intended local PostgreSQL instance first. The migrations include the
+AppUser table and the pgvector extension; neither a schema file nor a migration
+file proves it has been applied. Supabase-owned schemas are not managed by
+Prisma here.
+
+## Run the applications
+
+For the Compose application stack, with required values configured in `.env`:
+
+```sh
+docker compose up --build
+```
+
+Compose starts `client` (port 3000), `api` (port 3001), and `worker` (no
+published port). It does not start Supabase; start that separately as above.
+`NEXT_PUBLIC_*` values are build arguments and are embedded by Next.js during
+the image build. Runtime environment changes alone do not update the built
+browser bundle.
+
+For host development, `pnpm dev` delegates the workspace development tasks to
+Turbo. `pnpm dev:local` runs only web and API. To select one app:
+
+```sh
+pnpm --filter @knowledge-assistant/web dev
+pnpm --filter @knowledge-assistant/api dev
+pnpm --filter @knowledge-assistant/worker dev
+```
+
+The API's development launcher compiles with `tsc --watch` and starts the
+emitted JavaScript so Nest decorator metadata is preserved. The API and worker
+load the root `.env` in their development scripts. The worker starts pg-boss;
+its first startup can create or upgrade the library-owned `pgboss` schema.
+Use an intended local database with schema DDL permissions and start one worker
+for initial provisioning. The worker currently registers no product jobs.
+
+The web is at <http://localhost:3000>, API process health is at
+<http://localhost:3001/health>, and Supabase email preview is at
+<http://localhost:54324>. `/health` does not check PostgreSQL, Supabase Auth,
+or worker readiness. Stop the app containers with `docker compose down` and
+the CLI stack with `pnpm supabase:stop`; do not remove volumes unless local
+data loss is intended.
+
+## Workspace scripts and verification
 
 Run root commands from the repository root:
 
-| Command                                      | Configured action                                                                                                                                                      |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                                   | Turbo persistent development tasks for apps with `dev` scripts; alternatively select one app, e.g. `pnpm --filter @knowledge-assistant/worker dev` (or `web` / `api`). |
-| `pnpm build`                                 | Turbo dependency-ordered app builds (`next build` for web; `tsc -p tsconfig.build.json` for API/worker); backend/database `build` scripts run `tsc --noEmit`.          |
-| `pnpm lint` / `pnpm typecheck` / `pnpm test` | Turbo workspace tasks, with dependency-order configuration in `turbo.json`. No database or live AI test is part of the unit-test suite.                                |
-| `pnpm format` / `pnpm format:check`          | Root Prettier write/check respectively; check is read-only.                                                                                                            |
-| `pnpm db:check` / `pnpm db:migrate`          | Prisma validate / migrate deploy in the database package; `DIRECT_URL` required. Migrate changes the target database.                                                  |
-| `pnpm test:e2e`                              | Playwright HTTP test against an already running API at `http://127.0.0.1:3001`; not a Turbo/default `test` task.                                                       |
-| `pnpm supabase:start` / `pnpm supabase:stop` | Start CLI stack with specified excludes / stop it; these are not Compose commands.                                                                                     |
+| Command                                      | Configured action                                                                                                                 |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                                   | Turbo development tasks for packages with a `dev` script.                                                                         |
+| `pnpm dev:local`                             | Root launcher for web and API development tasks.                                                                                  |
+| `pnpm build`                                 | Turbo build tasks; Next.js builds web, TypeScript builds API/worker, and database build generates Prisma Client before compiling. |
+| `pnpm lint`                                  | Turbo lint tasks.                                                                                                                 |
+| `pnpm typecheck`                             | Turbo typecheck tasks.                                                                                                            |
+| `pnpm test`                                  | Turbo test tasks; normal tests use deterministic fakes and do not require live AI or a database.                                  |
+| `pnpm format` / `pnpm format:check`          | Root Prettier write/check commands.                                                                                               |
+| `pnpm db:check` / `pnpm db:migrate`          | Prisma schema validation / migration deployment; see the `DIRECT_URL` warning above.                                              |
+| `pnpm test:e2e`                              | Playwright HTTP smoke check against an already running API at `http://127.0.0.1:3001`.                                            |
+| `pnpm supabase:start` / `pnpm supabase:stop` | Supabase CLI stack lifecycle, separate from Compose.                                                                              |
 
-App-local scripts: web `dev` = `next dev --hostname 0.0.0.0`; API `dev` = a no-dependency `tsc --watch` launcher which starts/restarts emitted JS after successful compilation (thus preserves decorator metadata); worker `dev` = Node watch with `tsx` and root env-file loading. API/worker `build` = `tsc -p tsconfig.build.json`, `start` = `node dist/main.js`, `test` = ESM `ts-jest`/Jest with `--runInBand`. Each app has `eslint .` and `tsc --noEmit` scripts. `packages/backend` and `packages/database` have lint/typecheck/build; the database build generates its Prisma client and emits the compiled ESM factory consumed by API. The three config packages and contracts package have no task scripts.
+Targeted tests:
 
-Tests actually present:
+```sh
+pnpm --filter @knowledge-assistant/web exec vitest run
+pnpm --filter @knowledge-assistant/api test
+pnpm --filter @knowledge-assistant/worker test
+```
 
-- `apps/web/src/app/page.test.tsx`: Vitest in jsdom + React Testing Library renders the bootstrap page with Mantine and checks its title. No browser or navigation test.
-- `apps/api/test/app.spec.ts`: Jest/ts-jest + Nest testing module + Supertest verifies `GET /health` returns 200 and `{ status: 'ok' }` in-process. The other `test/` specs check API bootstrap, development metadata/environment and Docker-context fixture patterns without starting a database or Docker daemon. Colocated `src/modules/auth/*.spec.ts` cover the Authentication HTTP boundary, JWT verification, configuration, Supabase fakes and repository lifecycle without live Auth or database operations.
-- `apps/worker/src/bootstrap.spec.ts` checks the local `requireDatabaseUrl` helper; `lifecycle.spec.ts` uses a deterministic fake queue to cover start, background error and stop paths. Neither connects to PostgreSQL.
-- `tests/e2e/bootstrap.spec.ts`: Playwright **HTTP request fixture** against a running API's `/health`, no browser binary download or end-to-end product flow. See `tests/e2e/README.md` and `playwright.config.ts`.
+Web tests use Vitest, jsdom and Testing Library. API tests use Jest/ts-jest and
+Supertest; feature unit tests are colocated under `src/modules`, while
+application/bootstrap/HTTP tests live in `apps/api/test/`. The API test script
+builds the database package and its Prisma client but substitutes database and
+Auth operations in tests. Worker tests use deterministic queue fakes. The
+root Playwright test is an HTTP request fixture, not a browser flow. See
+[web Authentication verification](../apps/web/AUTHENTICATION.md) and
+[the e2e test note](../tests/e2e/README.md) for scope.
 
-`.github/workflows/check.yml` is configured for pushes to `main` and pull requests: install pinned Node/pnpm and locked dependencies, then `format:check`, `lint`, `typecheck`, `test`, `build`. It does not run the Playwright e2e test or Prisma migration. Presence of this workflow does not prove a run succeeded.
+## TypeScript, Turbo and CI
 
-## TypeScript, lint and formatting
+`packages/config-typescript/base.json` enables `strict` and
+`noUncheckedIndexedAccess`. Web adds Next/DOM settings; API and worker use
+NodeNext ESM, and API enables decorator metadata. API local imports use `.js`
+specifiers. ESLint uses flat configuration; the web config also blocks imports
+of server-only persistence and queue packages. Root Prettier settings are
+authoritative; `packages/config-prettier` is not referenced by root config.
 
-`packages/config-typescript/base.json` sets `strict: true`, `noUncheckedIndexedAccess: true`, ES2022, default Bundler resolution and no emit. Web adds Next's JSX/DOM config; API and worker override module/resolution to NodeNext for ESM, and API enables decorator metadata. Build-specific configs enable emit for API/worker. The shared ESLint flat config (`packages/config-eslint/index.js`) uses `typescript-eslint` recommended rules and forbids explicit `any`; web adds Next core-web-vitals/TypeScript configs and `no-restricted-imports` against server-only packages and database/queue imports. Root `.prettierrc.json` uses single quotes and trailing commas; `.prettierignore` excludes generated output, the lockfile and local Supabase state. `packages/config-prettier/index.json` has matching settings but is not referenced by the root configuration.
+Turborepo runs `build` after upstream builds, and lint/typecheck after their
+upstream tasks. In `turbo.json`, database `typecheck` additionally depends on
+its own `build`; both package scripts invoke `db:generate`. This orders the two
+generations within a single Turbo invocation. It does not coordinate separate
+Turbo/pnpm processes that use the same checkout.
 
-## Documentation findings / inconsistencies
+`.github/workflows/check.yml` runs `format:check`, `lint`, `typecheck`, `test`,
+and `build` on pull requests to `main` and pushes to `main`. It does not run
+`test:e2e` or apply Prisma migrations. The Prisma-generation ordering fix is
+present in `main`; this guide does not claim a post-fix GitHub Actions run
+passed. Check the actual workflow result for the branch/PR being reviewed.
 
-- The Docker build occurs before Compose injects the web `NEXT_PUBLIC_*` runtime environment. For any future browser code relying on those values, a build-time deployment strategy needs review; no current web code reads them.
-- The API uses Supabase Auth for fresh user verification and trusted JWKS routing; its health response remains process-only. Worker readiness requires a PostgreSQL connection but its unit test checks only configuration.
-- The CLI TOML includes `enabled = true` entries for services excluded by the root startup script; use the actual invocation when diagnosing local components.
-- The root check workflow does not exercise Playwright e2e or migrations. No database service status, migration state or CI outcome was verified as part of writing these docs.
+## Troubleshooting notes
 
-# API logging
-
-`LOG_LEVEL=info` is the default; `debug` is the only other accepted value.
-Invalid values fail API startup without echoing the supplied value.
-`NODE_ENV=production` selects JSON Lines; development selects readable text.
-There is no LOG_FORMAT option. Explicit levels ignore NEST_LOG_LEVEL overrides.
-Production sends normal events to stdout and error/fatal to stderr; no files,
-external transports or monitoring services are configured.
-
-HTTP completion uses the existing server request ID and a monotonic duration.
-Successful GET /health 200 is omitted; errors and aborted requests remain visible.
-An aborted request has no confirmed response status. A 5xx diagnostic and its
-completion are distinct events sharing requestId. Never log raw request/response
-or Error objects, URL/query, headers, body, credentials, email, SQL, cause or stack.
-Nest system messages are replaced by fixed safe categories. Shutdown hooks are
-preserved, but log delivery on abrupt termination or broken output is not guaranteed.
+- **API Auth configuration fails:** verify the local public Supabase URL/key,
+  issuer, audience, algorithm, and database URL. Do not replace the JWT issuer
+  with a container-internal hostname; it must match the token issuer.
+- **Container cannot reach local PostgreSQL/Supabase:** use the Compose
+  variables and `host.docker.internal`; host processes use loopback. Do not
+  confuse `DATABASE_URL` and `COMPOSE_DATABASE_URL`.
+- **Prisma cannot connect or validate:** check `DIRECT_URL` and its target.
+  `db:generate` is local code generation; `db:migrate` changes a database.
+- **Web still uses previous public configuration:** Next `NEXT_PUBLIC_*`
+  values are build-time inputs; rebuild the client image.
+- **Worker cannot start:** check local database reachability and whether the
+  database role can create/upgrade pg-boss's schema. A worker is not yet
+  processing product jobs.
+- **Health check returns 200 while dependencies are unavailable:** expected;
+  `/health` is process-only.
