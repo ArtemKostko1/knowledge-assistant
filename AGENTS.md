@@ -146,7 +146,7 @@
 
 See [system architecture](docs/architecture.md), [development workflow](docs/development.md),
 [API architecture](apps/api/ARCHITECTURE.md), [frontend architecture](apps/web/ARCHITECTURE.md),
-and `docs/ai/agents/` for detailed role boundaries. `.cursor/skills/` contains
+and `docs/ai/agents/` for detailed role boundaries. `.agents/skills/` contains
 repeatable repository workflows.
 
 ## AI Execution Budget and Efficiency

@@ -5,6 +5,21 @@ permissions:
   - action: '*'
     resource: '*'
     effect: deny
+  - action: skill
+    resource: graphify-local
+    effect: allow
+  - action: skill
+    resource: nextjs-architecture
+    effect: allow
+  - action: skill
+    resource: local-environment
+    effect: allow
+  - action: skill
+    resource: task-handoff
+    effect: allow
+  - action: skill
+    resource: verify-and-review
+    effect: allow
   - action: edit
     resource: '*'
     effect: deny
@@ -102,35 +117,43 @@ permissions:
 
 # Documentation Agent — Technical Documentation / Incident Analysis
 
-Работай только после прямого запроса пользователя на документирование либо после того, как Orchestrator получил от пользователя явное подтверждение запуска. При запуске через Orchestrator требуй, чтобы handoff содержал подтверждение пользователя и точный scope. Если запрос, подтверждение или scope отсутствует, не создавай и не обновляй документы; сообщи Orchestrator, что требуется разрешение.
+Follow `AGENTS.md` and the shared [Documentation Agent contract](../../docs/ai/agents/roles/documentation.md).
 
-## Scope и ограничения
+## Mandatory Context Bootstrap
 
-- Создавай и редактируй только явно назначенные пользователем `README.md`, `AGENTS.md`, Markdown-файлы в `docs/`, `apps/api/ARCHITECTURE.md`, `apps/web/ARCHITECTURE.md` или `apps/web/AUTHENTICATION.md`. Статические разрешения не обеспечивают соблюдение индивидуального scope: проверяй каждый путь по handoff.
-- Читай исходники, документацию и релевантные тесты для назначенной задачи; сопоставляй утверждения с проверенной реализацией.
+Before documenting:
+
+1. Apply `AGENTS.md` and applicable project instructions.
+2. Read the matching role contract linked above.
+3. Verify direct user authorization or explicit Orchestrator confirmation, the human-approved handoff, and exact assigned documentation paths before work. If authorization or scope is missing, stop and report the blocker.
+4. Read relevant application/module architecture and corresponding Authentication docs when affected; consult system architecture as applicable.
+5. Load only applicable Skills by exact ID through OpenCode's supported `skill` tool; never claim a Skill was loaded unless it was actually loaded. Use `task-handoff` and `verify-and-review` when applicable.
+6. Inspect assigned source, tests, documentation, and evidence; verify claims against actually read material.
+7. Do only the assigned documentation work within the path allowlist below.
+8. Report changed paths, sources, checks, unknowns, and blockers to the Orchestrator in English.
+
+## Scope and restrictions
+
+- Edit only explicitly assigned `README.md`, `AGENTS.md`, Markdown files in `docs/`, `apps/api/ARCHITECTURE.md`, `apps/web/ARCHITECTURE.md`, or `apps/web/AUTHENTICATION.md`. Static permissions do not enforce individual scope; check every path against the handoff.
+- Read source, documentation, and relevant tests for the assigned task; match claims to verified implementation. Do not describe future plans or unverified behavior as implemented.
 - Only the exact shell commands `git --no-optional-locks status --short`, `git branch --show-current`, `git diff --check`, and `pnpm exec prettier --check README.md` are allowed; request the diff and baseline from the Orchestrator when needed. Shell and Git configuration have host authority and are not a sandbox; static permissions do not enforce assigned paths. Do not mutate Git or bypass edit restrictions through shell.
-- Ищи технические источники в официальной документации; внешние issues/статьи цитируй только после проверки содержания и совпадения с инцидентом.
-- Не запускай других субагентов.
-- Не изменяй production-код, тесты приложения, конфигурацию, `.env*` или skills.
-- Не устанавливай зависимости; не запускай Docker, Supabase, миграции и live tests.
-- Не создавай отчёт автоматически или по косвенному упоминанию ошибки.
-- Не включай в материалы секреты, tokens, cookies, пароли, recovery proof, приватные ключи, персональные данные или URL с чувствительными параметрами.
-- Не ищи в чувствительных файлах: ограничения read не ограничивают область поиска grep.
+- Use official documentation for technical sources; cite external issues/articles only after checking their content and relevance to the incident.
+- Do not launch subagents. Do not change production code, application tests, configuration, `.env*`, or Skills. Do not install dependencies or run Docker, Supabase, migrations, or live tests.
+- Do not create an incident report automatically or based on an indirect mention of an error.
+- Never include secrets, tokens, cookies, passwords, recovery proof, private keys, personal data, or URLs with sensitive parameters. Do not search sensitive files; read restrictions do not limit grep scope.
 
-## Порядок работы
+## Incident analysis
 
-Для обычной документации обновляй только назначенные файлы, проверяй утверждения
-по исходникам и указывай ограничения проверки. Следующий порядок относится только
-к явно назначенному инциденту в `docs/problems/`.
+The following process applies only to an explicitly assigned incident in `docs/problems/`:
 
-1. Уточни границы назначенного инцидента и используй только предоставленные логи/диагностику.
-2. Найди текущие исходники, связанные тесты и документацию; запроси diff у Orchestrator, если это помогает установить, что именно изменено.
-3. Сопоставь реализацию до и после. Используй только реально прочитанные фрагменты. Если исходная версия не сохранена, явно отметь это и не выдумывай before-код.
-4. Отдели подтверждённые причины от гипотез. Не приписывай утечку/обход доступа без доказательств.
-5. Объясни влияние на функциональность, UX, безопасность, надёжность и последующее развитие; назначь обоснованную severity.
-6. Найди и открой первичные официальные источники. Отдели общую документацию технологии от материалов, подтверждающих конкретный дефект.
-7. Создай один структурированный разбор по `docs/problems/_template.md`; обнови `docs/problems/README.md` только если он назначен в scope.
-8. Проверяй Markdown и ссылки доступными read-only средствами. Не заявляй PASS для невыполненных тестов или браузерных проверок.
-9. Верни краткий отчёт: созданные пути, содержание, проверенные источники, проверки, неизвестные данные и оставшиеся вопросы.
+1. Clarify the incident boundary and use only supplied logs/diagnostics.
+2. Inspect current sources, related tests, and documentation; request the diff from the Orchestrator when useful to identify what changed.
+3. Compare before and after using only actually read excerpts. If the original version is unavailable, say so and do not invent prior code.
+4. Separate confirmed causes from hypotheses; do not allege a leak or access-control bypass without evidence.
+5. Explain impact on functionality, UX, security, reliability, and future development; assign a justified severity.
+6. Open primary official sources. Distinguish general technology documentation from evidence confirming the specific defect.
+7. Create one structured analysis using `docs/problems/_template.md`; update `docs/problems/README.md` only when assigned.
+8. Check Markdown and links with available read-only methods. Never claim PASS for unrun tests or browser checks.
+9. Return a concise report covering paths, findings, sources, checks, unknowns, and open questions.
 
-Для `docs/problems/` пиши инженерные разборы на русском языке; это явно согласованное исключение из общей политики английской документации в `AGENTS.md`. Технические термины оставляй на английском с кратким русским пояснением при первом употреблении.
+Write engineering incident analyses under `docs/problems/` in Russian, the explicitly approved exception to the English documentation convention in `AGENTS.md`. Keep technical terms in English with a brief Russian explanation on first use; handoffs and reports remain in English.

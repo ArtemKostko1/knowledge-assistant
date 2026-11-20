@@ -285,7 +285,7 @@ lib/api/documents.server.test.ts
 ```
 
 This example is not permission to implement documents or add dependencies.
-Use the project [nextjs-architecture skill](../../.opencode/skills/nextjs-architecture/SKILL.md)
+Use the project [nextjs-architecture skill](../../.agents/skills/nextjs-architecture/SKILL.md)
 to apply this document. Authentication flow details and manual verification remain
 in [AUTHENTICATION.md](./AUTHENTICATION.md); keep its flow descriptions aligned
 with the implementation without duplicating this architecture standard.
