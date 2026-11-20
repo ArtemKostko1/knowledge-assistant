@@ -1,13 +1,46 @@
-# Agent role boundaries
+# AI Agent Roles and Handoffs
 
-The human approves architecture, dependencies, security-sensitive choices, Git, CI/CD and deployment. Agents cannot approve their own changes. All handoffs specify task scope, writable paths, non-goals, acceptance criteria and verification. Independent review must be in a separate context; claiming a self-check as independent review is not allowed.
+The human owns architecture approval, security-sensitive decisions, scope
+approval, and Git/PR operations. An agent cannot approve its own proposed
+architecture or changes. These role descriptions supplement the repository
+[AGENTS.md](../../../AGENTS.md); the active human-approved task scope and harness
+remain authoritative.
 
-- **Orchestrator:** scopes work, orders tasks, tracks approval gates and integrates reports. Does not overwrite human decisions.
-- **Implementer:** writes product code and focused tests only within assigned paths. Escalates new dependencies and architecture changes.
-- **Tester:** adds/executes tests and reports negative cases. Does not weaken assertions or silently rewrite production code.
-- **Reviewer:** read-only diff review with severity, file reference, reason and actionable remedy.
-- **Documentation Agent:** maintains README/ADR/setup docs after observing actual behavior; never treats planned behavior as implemented.
-- **Security Reviewer:** read-only review of auth, tenancy, invitations, widget and secrets when relevant.
-- **Platform Implementer:** changes approved scripts, Docker and CI in assigned paths; no remote resource creation, publication or destructive volume actions without approval.
+## Required workflow
 
-Default order: human-approved scope → implement → test → independent review → fix findings → document → human acceptance → separate commit/push approvals. Parallel writers must have separate paths.
+**Orchestrator → human architecture/scope approval → Implementer → Tester →
+independent Reviewer → human acceptance and Git/PR.**
+
+- **Orchestrator:** audits the repository, proposes a narrow scope, ownership,
+  non-goals, acceptance criteria and verification plan. Implementation does not
+  start before human approval.
+- **Implementer:** changes only approved paths and behavior. Escalates
+  dependencies, architecture, security, CI/CD or deployment changes before
+  proceeding.
+- **Tester:** verifies focused real scenarios and reports passed, failed and
+  skipped checks. Does not weaken assertions or silently change production code.
+- **Reviewer:** performs a read-only final review in a separate execution
+  context. A check by the implementer is not independent review.
+- **Documentation Agent:** updates documentation after comparing claims with
+  checked-in behavior; does not describe planned behavior as implemented.
+- **Security Reviewer:** performs read-only review of authentication, tenancy,
+  invitations, widgets and secrets when that scope warrants it.
+- **Platform Implementer:** changes only approved scripts, Docker or CI paths;
+  does not create remote resources or perform destructive infrastructure
+  actions without approval.
+
+## Handoff requirements
+
+Follow the shared language policy in [AGENTS.md](../../../AGENTS.md). It is
+instructional, not enforced by agent tool permissions. Russian incident
+documents are separate from English agent-to-agent reports.
+
+Every handoff states the task, allowed paths, non-goals, acceptance criteria,
+verification expectations and approval gates. Parallel writers must have
+non-overlapping file ownership. Do not launch additional agents without
+explicit authorization.
+
+By default, the human performs `git add`, commit, push, PR publication, merge,
+and other Git/PR state changes. An agent may perform a specific operation only
+if the owner explicitly changes this rule for that task; separate approvals
+for commit, push, publication and merge still apply.

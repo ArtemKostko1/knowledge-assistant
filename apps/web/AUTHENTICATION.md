@@ -72,16 +72,18 @@ children. The root route redirects verified users to `/app` and others to
 `/login`; an Auth outage renders a safe error.
 
 `src/config/access-policy.ts` is the single exact public-auth allowlist.
-`src/proxy.ts` matches all routes and denies anonymous requests not explicitly
-allowed, including unknown product routes and paths outside `(protected)`.
-Nested auth paths are not implicitly public. Only the listed Next static/image/
-HMR assets and favicon bypass the auth check. Token-flow routes avoid importing
-or refreshing an unrelated login session. Denied POSTs use 303; ordinary auth
-routes remain usable for signed-in users.
+`src/proxy.ts` matches all routes and normally denies anonymous requests not
+explicitly allowed, including unknown product routes and paths outside
+`(protected)`. Nested auth paths are not implicitly public. The listed Next
+static/image/HMR assets and favicon bypass the auth check. Token-flow routes
+avoid importing or refreshing an unrelated login session. A `POST /app` with
+the `Next-Action` header is also forwarded before Proxy calls `getUser()`, as
+described below. Denied POSTs use 303; ordinary auth routes remain usable for
+signed-in users.
 
 Route groups organize the UI; they do not replace Proxy or server checks.
-Server Actions and backend endpoints must enforce their own authorization when
-they perform protected operations.
+Protected Server Actions must independently authenticate and authorize their
+operations; backend endpoints must enforce their own authorization.
 
 ## Application profile and logout
 
@@ -105,10 +107,13 @@ Supabase SSR cookies are shared across tabs. To preserve the App Router Server
 Action response when a stale tab submits logout after another tab changed the
 session, Proxy forwards only `POST /app` requests carrying Next.js's
 `Next-Action` marker to the framework handler. This marker is not authorization:
-the logout action checks the current session with `getUser()` before local
-sign-out, while all other protected requests retain Proxy's `getUser()` check.
-This cross-tab fix is tracked as AUTH-001 and Verified. Every product Server
-Action must enforce its own authorization.
+it is not authentication either, and passing Proxy does not authorize the
+request. Proxy forwards these requests before its `getUser()` check. The logout
+action calls `getUser()` before local sign-out; it returns a safe error for
+status 0 or 5xx Auth errors, but does not require a user to be present before
+attempting sign-out. This supports clearing an already-missing session. Protected
+Server Actions must independently authenticate and authorize their operations.
+This cross-tab fix is tracked as AUTH-001 and Verified.
 
 ## Local API configuration
 
