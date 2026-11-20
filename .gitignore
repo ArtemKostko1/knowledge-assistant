@@ -88,7 +88,6 @@ Thumbs.db
 # ============================================================
 
 # Local MCP connections and user-specific configuration
-/opencode.jsonc
 
 # Local Graphify skill
 /.opencode/skills/graphify-local/

@@ -29,7 +29,7 @@ budget. This skill does not approve a migration, new feature or dependency.
 4. The Architecture Foundation and feature migrations are complete. Follow the
    current structure in `apps/web/ARCHITECTURE.md`. URL constants belong only
    in `apps/web/src/config/routes.ts`; the sole default-deny security policy is
-   `apps/web/src/config/access-policy.ts`. Do not duplicate the public allowlist
+   in `apps/web/src/config/access-policy.ts`. Do not duplicate the public allowlist
    or create empty target directories.
 5. Make the smallest authorized change, run affected checks, report and stop.
 

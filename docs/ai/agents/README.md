@@ -29,6 +29,18 @@ independent Reviewer → human acceptance and Git/PR.**
   does not create remote resources or perform destructive infrastructure
   actions without approval.
 
+## Role contracts
+
+| Role                 | Contract                                                        |
+| -------------------- | --------------------------------------------------------------- |
+| Orchestrator         | [Scope and coordinate approved work](roles/orchestrator.md)     |
+| Implementer          | [Implement only assigned scope](roles/implementer.md)           |
+| Tester               | [Verify approved behavior](roles/tester.md)                     |
+| Reviewer             | [Independently review read-only](roles/reviewer.md)             |
+| Documentation Agent  | [Update authorized documentation](roles/documentation.md)       |
+| Platform Implementer | [Change approved platform paths](roles/platform-implementer.md) |
+| Security Reviewer    | [Review security read-only](roles/security-reviewer.md)         |
+
 ## Handoff requirements
 
 Follow the shared language policy in [AGENTS.md](../../../AGENTS.md). It is

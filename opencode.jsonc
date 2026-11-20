@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "supabase-local": {
+        "type": "remote",
+        "url": "http://127.0.0.1:54321/mcp?read_only=true&features=docs%2Cdatabase",
+        "oauth": false,
+        "disabled": false,
+      },
+    },
+  },
+  "default_agent": "orchestrator",
+  "instructions": ["docs/architecture.md", "docs/ai/agents/README.md"],
+}
